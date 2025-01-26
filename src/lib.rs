@@ -8,6 +8,10 @@ pub use crate::builder::*;
 pub use crate::executor::*;
 pub use crate::line::*;
 
+/// Re-export of [`strip_ansi`](https://docs.rs/strip_ansi/latest/strip_ansi/fn.strip_ansi.html)
+/// the ported chalk regex
+pub use strip_ansi::strip_ansi;
+
 pub mod ansi_code {
     pub const RED: &str = "\x1b[31m";
     pub const YELLOW: &str = "\x1b[38;5;220m";
