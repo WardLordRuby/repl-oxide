@@ -1,0 +1,12 @@
+[package]
+name = "repl-oxide"
+version = "0.1.0"
+edition = "2021"
+repository = "https://github.com/WardLordRuby/repl-oxide"
+
+[dependencies]
+crossterm = { version = "0.28.1", features = ["event-stream"]}
+shellwords = "1.1.0"
+strip-ansi = "0.1.0"
+tokio = "1.43.0"
+tokio-stream = "0.1.17"
