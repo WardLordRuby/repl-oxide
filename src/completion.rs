@@ -1330,6 +1330,9 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
     /// Resets the state of the current suggestions
     pub fn reset_completion(&mut self) {
+        if self.completion.is_empty() {
+            return;
+        }
         self.default_recomendations();
         self.completion.input = CompletionState::default();
         self.completion.indexer = Indexer::default();
