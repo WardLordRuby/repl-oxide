@@ -22,10 +22,9 @@ use tokio::time::{timeout, Duration};
 use tokio_stream::StreamExt;
 
 // MARK: TODOS
-// 1. Add a .run() method to LineReader that is a awaitable for users who just need a basic REPL
-// 2. Add a .background_run::<T: Print>() method that is spawnable and gives the user access to a Sender<T> to print background messages
-// 3. Make the basic use cases as easy to set up as possible
-// 4. Finish docs + create README.md + add examples for all use cases
+// 1. Add a .background_run::<T: Print>() method that is spawnable and gives the user access to a Sender<T> to print background messages
+// 2. Make the basic use cases as easy to set up as possible
+// 3. Finish docs + create README.md + add examples for all use cases
 
 pub type InputEventHook<Ctx, W> =
     dyn Fn(&mut LineReader<Ctx, W>, Event) -> io::Result<HookedEvent<Ctx>>;
@@ -372,13 +371,13 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
     /// Pops the first queued `input_hook`
     #[inline]
-    pub fn pop_input_hook(&mut self) -> Option<InputHook<Ctx, W>> {
+    fn pop_input_hook(&mut self) -> Option<InputHook<Ctx, W>> {
         self.input_hooks.pop_front()
     }
 
     /// References the first queued `input_hook`
     #[inline]
-    pub fn next_input_hook(&mut self) -> Option<&InputHook<Ctx, W>> {
+    fn next_input_hook(&mut self) -> Option<&InputHook<Ctx, W>> {
         self.input_hooks.front()
     }
 
@@ -421,14 +420,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     #[inline]
     pub fn input(&self) -> &str {
         &self.line.input
-    }
-
-    /// Calls `mem::take` on the user input
-    #[inline]
-    pub fn take_input(&mut self) -> String {
-        self.line.len = 0;
-        self.line.err = false;
-        std::mem::take(&mut self.line.input)
     }
 
     /// Gets the number of lines wrapped
@@ -477,18 +468,9 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// break_if_err!(line_handle.clear_unwanted_inputs(&mut reader).await);
     /// break_if_err!(line_handle.render());
     /// ```
-    /// Where:
-    /// ```
-    /// macro_rules! break_if_err {
-    ///     ($expr:expr) => {
-    ///         if let Err(err) = $expr {
-    ///             eprintln!("{err}");
-    ///             break;
-    ///         }
-    ///     };
-    /// }
-    /// ```
-    /// A macro like `break_if_err!` can be helpful if you want to have a graceful shutdown procedure
+    /// [`break_if_err!`](crate::break_if_err) can be helpful if you are writing your own main loop and you
+    /// don't want main to short circut on an `io::Error` and are okay with using the tracing crate for
+    /// error logging
     pub fn render(&mut self) -> io::Result<()> {
         if std::mem::take(&mut self.uneventful) {
             return Ok(());
@@ -533,32 +515,33 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         Ok(())
     }
 
-    /// Writes the current line to the terminal and then calls [`clear_line`](Self::clear_line)
-    pub fn new_line(&mut self) -> io::Result<()> {
+    /// Writes the current line to the terminal and then returns [`clear_line`](Self::clear_line)
+    pub fn new_line(&mut self) -> io::Result<String> {
         writeln!(self.term)?;
         self.clear_line()
     }
 
-    /// Appends "^C" in red to the current line and writes it to the terminal and then calls
+    /// Appends "^C" in red to the current line and writes it to the terminal and then returns
     /// [`clear_line`](Self::clear_line)
-    pub fn ctrl_c_line(&mut self) -> io::Result<()> {
+    pub fn ctrl_c_line(&mut self) -> io::Result<String> {
         writeln!(self.term, "{}", "^C".red())?;
         self.clear_line()
     }
 
     /// Resets the internal state of the input line, last history index, and completion suggestions
-    pub fn clear_line(&mut self) -> io::Result<()> {
-        self.reset_line_data();
+    /// returning you an owned `String` of what was cleared
+    pub fn clear_line(&mut self) -> io::Result<String> {
+        let old = self.reset_line_data();
         self.move_to_beginning(self.line_len())?;
         self.reset_completion();
         self.history.curr_index = self.history.prev_entries.len();
-        Ok(())
+        Ok(old)
     }
 
-    fn reset_line_data(&mut self) {
-        self.line.input.clear();
+    fn reset_line_data(&mut self) -> String {
         self.line.len = 0;
         self.line.err = false;
+        std::mem::take(&mut self.line.input)
     }
 
     pub(crate) fn change_line(&mut self, line: String) -> io::Result<()> {
@@ -569,10 +552,8 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     }
 
     fn enter_command(&mut self) -> io::Result<&str> {
-        self.history
-            .prev_entries
-            .push(std::mem::take(&mut self.line.input));
-        self.new_line()?;
+        let cmd = self.new_line()?;
+        self.add_to_history(cmd);
         execute!(self.term, cursor::Hide)?;
         self.command_entered = true;
 
@@ -581,6 +562,12 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             .prev_entries
             .last()
             .expect("just pushed into `prev_entries`"))
+    }
+
+    /// Pushes onto history
+    #[inline]
+    pub fn add_to_history(&mut self, add: String) {
+        self.history.prev_entries.push(add);
     }
 
     /// Changes the current line to the previous history entry if available
@@ -615,6 +602,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// If a [custom quit command](crate::LineReaderBuilder::with_custom_quit_command) is set this will tell the
     /// main loop to process the set command otherwise will return `EventLoop::Break`  
     pub fn process_close_signal(&mut self) -> io::Result<EventLoop<Ctx>> {
+        self.clear_line()?;
         let Some(quit_cmd) = self.custom_quit.clone() else {
             return Ok(EventLoop::Break);
         };
@@ -627,6 +615,13 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// own branch in a `tokio::select!`.
     ///
     /// Example main loop assuming we have a `Ctx`, `command_context`,  that implements [`Executor`](crate::Executor)
+    ///
+    /// See: [`process_callback!`](crate::process_callback), for reducing boilerplate for callbacks if you plan to use
+    /// the tracing crate for error logging
+    ///
+    /// [`break_if_err!`](crate::break_if_err) and [`unwrap_or_break!`](crate::unwrap_or_break) can be helpful if you
+    /// are writing your own main loop and you don't want main to short circut on an `io::Error` and are okay with
+    /// using the tracing crate for error logging
     ///
     /// ```ignore
     /// let mut reader = crossterm::event::EventStream::new();
@@ -641,10 +636,10 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///     line_handle.render()?;
     ///
     ///     if let Some(event_result) = reader.next().await {
-    ///         match line_handle.process_input_event(event_result?) {
-    ///             Ok(EventLoop::Continue) => (),
-    ///             Ok(EventLoop::Break) => break,
-    ///             Ok(EventLoop::Callback(callback)) => {
+    ///         match line_handle.process_input_event(event_result?)? {
+    ///             EventLoop::Continue => (),
+    ///             EventLoop::Break => break,
+    ///             EventLoop::Callback(callback) => {
     ///                 if let Err(err) = callback(&mut command_context) {
     ///                     eprintln!("{err}");
     ///                     if let Some(on_err_callback) = line_handle.conditionally_remove_hook(&err) {
@@ -652,7 +647,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///                     };
     ///                 }
     ///             },
-    ///             Ok(EventLoop::AsyncCallback(callback)) => {
+    ///             EventLoop::AsyncCallback(callback) => {
     ///                 if let Err(err) = callback(&mut command_context).await {
     ///                     eprintln!("{err}");
     ///                     if let Some(on_err_callback) = line_handle.conditionally_remove_hook(&err) {
@@ -660,20 +655,16 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///                     };
     ///                 }
     ///             },
-    ///             Ok(EventLoop::TryProcessInput(Ok(user_tokens))) => {
-    ///                 match command_context.try_execute_command(user_tokens).await {
+    ///             EventLoop::TryProcessInput(Ok(user_tokens)) => {
+    ///                 match command_context.try_execute_command(user_tokens).await? {
     ///                     CommandHandle::Processed => (),
     ///                     CommandHandle::InsertHook(input_hook) => line_handle.register_input_hook(input_hook),
     ///                     CommandHandle::Exit => break,
     ///                 }
     ///             }
-    ///             Ok(EventLoop::TryProcessInput(Err(mismatched_quotes))) => {
+    ///             EventLoop::TryProcessInput(Err(mismatched_quotes)) => {
     ///                 eprintln!("{mismatched_quotes}")
     ///             },
-    ///             Err(err) => {
-    ///                 eprintln!("{err}");
-    ///                 break;
-    ///             }
     ///         }
     ///     }
     /// }
@@ -702,11 +693,10 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 modifiers: KeyModifiers::CONTROL,
                 ..
             }) => {
-                let line_was_empty = self.line.input.is_empty();
-                self.ctrl_c_line()?;
-                if line_was_empty {
+                if self.input().is_empty() {
                     return self.process_close_signal();
                 }
+                self.ctrl_c_line()?;
                 Ok(EventLoop::Continue)
             }
             Event::Key(KeyEvent {
@@ -714,10 +704,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 kind: KeyEventKind::Press,
                 modifiers: KeyModifiers::CONTROL,
                 ..
-            }) => {
-                self.clear_line()?;
-                self.process_close_signal()
-            }
+            }) => self.process_close_signal(),
             Event::Key(KeyEvent {
                 code: KeyCode::Tab,
                 kind: KeyEventKind::Press,

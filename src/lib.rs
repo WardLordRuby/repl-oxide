@@ -8,6 +8,12 @@ pub use crate::builder::*;
 pub use crate::executor::*;
 pub use crate::line::*;
 
+#[cfg(feature = "macros")]
+pub mod macros;
+
+#[cfg(feature = "runner")]
+pub mod runner;
+
 /// Re-export of [`strip_ansi`](https://docs.rs/strip_ansi/latest/strip_ansi/fn.strip_ansi.html)
 /// the ported chalk regex
 pub use strip_ansi::strip_ansi;

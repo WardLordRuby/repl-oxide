@@ -2,11 +2,29 @@
 name = "repl-oxide"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 repository = "https://github.com/WardLordRuby/repl-oxide"
+keywords = ["repl", "interpreter", "clap"]
+categories = ["command-line-interface"]
+
+[features]
+macros = ["dep:tracing"]
+runner = ["macros"]
+all = ["macros", "runner"]
 
 [dependencies]
 crossterm = { version = "0.28.1", features = ["event-stream"]}
 shellwords = "1.1.0"
 strip-ansi = "0.1.0"
-tokio = "1.43.0"
+tokio = { version = "1.43.0", default-features = false, features = ["time"]}
 tokio-stream = "0.1.17"
+tracing = { version = "0.1.41", default-features = false, features = ["attributes"], optional = true }
+
+[dev-dependencies]
+clap = { version = "4.5.27", features = ["derive"]}
+tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros"]}
+
+[[example]]
+name = "runner"
+path = "examples/runner.rs"
+required-features = ["runner"]

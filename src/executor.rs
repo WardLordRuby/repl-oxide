@@ -1,5 +1,17 @@
 use crate::line::InputHook;
-use std::{future::Future, io::Write};
+use std::{
+    future::Future,
+    io::{self, Write},
+};
+
+/// Format tokens into what Clap's [`Parser`](https://docs.rs/clap/latest/clap/trait.Parser.html) trait expects
+#[inline]
+pub fn format_for_clap(
+    tokens: Vec<String>,
+) -> std::iter::Chain<std::iter::Once<std::string::String>, std::vec::IntoIter<std::string::String>>
+{
+    std::iter::once(String::new()).chain(tokens)
+}
 
 /// The suggested return type for commands
 pub enum CommandHandle<Ctx, W: Write> {
@@ -14,22 +26,18 @@ pub enum CommandHandle<Ctx, W: Write> {
 /// Example using `Stdout` writer and `try_parse_from` via `clap_derive::Parser`
 /// ```ignore
 /// impl Executor<Stdout> for CommandContext {
-///     async fn try_execute_command(&mut self, user_tokens: Vec<String>) -> CommandHandle<Self, Stdout> {
-///         match UserCommand::try_parse_from(
-///             std::iter::once(String::new()).chain(user_tokens.into_iter()),
-///         ) {
-///             Ok(cli) => match cli.command {
+///     async fn try_execute_command(&mut self, user_tokens: Vec<String>) -> io::Result<CommandHandle<Self, Stdout>> {
+///         match Command::try_parse_from(format_for_clap(user_tokens)) {
+///             Ok(command) => match command {
 ///                 /*
-///                     Route to command functions that return `CommandHandle`
+///                     Route to command functions that return `io::Result<CommandHandle>`
 ///                 */
 ///                 Command::Version => self.print_version(),
 ///                 Command::Quit => self.quit().await,
 ///             },
 ///             Err(err) => {
-///                 if let Err(prt_err) = err.print() {
-///                     eprintln!("{err} {prt_err}");
-///                 }
-///                 CommandHandle::Processed
+///                 err.print()?;
+///                 Ok(CommandHandle::Processed)
 ///             }
 ///         }
 ///     }
@@ -50,5 +58,5 @@ pub trait Executor<W: Write>: std::marker::Sized {
     fn try_execute_command(
         &mut self,
         user_tokens: Vec<String>,
-    ) -> impl Future<Output = CommandHandle<Self, W>>;
+    ) -> impl Future<Output = io::Result<CommandHandle<Self, W>>>;
 }
