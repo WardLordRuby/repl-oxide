@@ -534,8 +534,13 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         let old = self.reset_line_data();
         self.move_to_beginning(self.line_len())?;
         self.reset_completion();
-        self.history.curr_index = self.history.prev_entries.len();
+        self.reset_history_idx();
         Ok(old)
+    }
+
+    #[inline]
+    fn reset_history_idx(&mut self) {
+        self.history.curr_index = self.history.prev_entries.len();
     }
 
     fn reset_line_data(&mut self) -> String {
@@ -564,10 +569,11 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             .expect("just pushed into `prev_entries`"))
     }
 
-    /// Pushes onto history
+    /// Pushes onto history and resets the internal history index to the top
     #[inline]
     pub fn add_to_history(&mut self, add: String) {
         self.history.prev_entries.push(add);
+        self.reset_history_idx();
     }
 
     /// Changes the current line to the previous history entry if available

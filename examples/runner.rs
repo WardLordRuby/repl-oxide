@@ -3,6 +3,7 @@
 use std::io::{self, Stdout};
 
 use clap::Parser;
+use crossterm::terminal;
 use tokio::time::{sleep, Duration};
 
 use repl_oxide::{format_for_clap, repl_builder, CommandHandle, Executor};
@@ -65,8 +66,8 @@ impl Executor<Stdout> for CommandContext {
 #[tokio::main]
 async fn main() -> io::Result<()> {
     let mut repl = repl_builder()
-        .terminal(std::io::stdout())
-        .terminal_size(crossterm::terminal::size()?)
+        .terminal(io::stdout())
+        .terminal_size(terminal::size()?)
         .build()
         .expect("all required inputs are provided & terminal accepts crossterm commands");
 
