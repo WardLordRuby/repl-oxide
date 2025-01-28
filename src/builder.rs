@@ -3,7 +3,7 @@ use crate::{
     line::{LineData, LineReader},
 };
 
-use crossterm::{cursor, QueueableCommand};
+use crossterm::{cursor, terminal, QueueableCommand};
 use shellwords::split as shellwords_split;
 
 use std::io::{self, ErrorKind, Write};
@@ -12,18 +12,21 @@ use std::io::{self, ErrorKind, Write};
 pub struct LineReaderBuilder<'a, W: Write> {
     completion: Option<&'static CommandScheme>,
     custom_quit: Option<&'a str>,
-    term: Option<W>,
+    term: W,
     term_size: Option<(u16, u16)>,
     prompt: Option<String>,
     prompt_end: Option<&'static str>,
 }
 
 /// Builder for [`LineReader`]
-pub fn repl_builder<W: Write>() -> LineReaderBuilder<'static, W> {
+///
+/// `LineReader` must include a terminal that is compatable with executing commands via the
+/// `crossterm` crate.
+pub fn repl_builder<W: Write>(terminal: W) -> LineReaderBuilder<'static, W> {
     LineReaderBuilder {
         completion: None,
         custom_quit: None,
-        term: None,
+        term: terminal,
         term_size: None,
         prompt: None,
         prompt_end: None,
@@ -40,16 +43,12 @@ impl<'a, W: Write> LineReaderBuilder<'a, W> {
 }
 
 impl<W: Write> LineReaderBuilder<'_, W> {
-    /// `LineReader` must include a terminal that is compatable with executing commands via the
-    /// `crossterm` crate.
-    pub fn terminal(mut self, term: W) -> Self {
-        self.term = Some(term);
-        self
-    }
-
-    /// `LineReader` must include a terminal size so rendering the window is displayed correctly.  
-    /// `size`: (columns, rows)
-    pub fn terminal_size(mut self, size: (u16, u16)) -> Self {
+    /// Specify a starting size the the terminal should be set to on [`build`](Self::build) if no size
+    /// is supplied then size is found with a call to
+    /// [`terminal::size`](https://docs.rs/crossterm/latest/crossterm/terminal/fn.size.html)  
+    /// `size`: `(columns, rows)`  
+    /// The top left cell is represented `(1, 1)`.
+    pub fn with_size(mut self, size: (u16, u16)) -> Self {
         self.term_size = Some(size);
         self
     }
@@ -73,13 +72,24 @@ impl<W: Write> LineReaderBuilder<'_, W> {
         self
     }
 
-    pub fn build<Ctx>(self) -> io::Result<LineReader<Ctx, W>> {
-        let mut term = self
-            .term
-            .ok_or_else(|| io::Error::new(ErrorKind::NotFound, "terminal is required"))?;
-        let term_size = self
-            .term_size
-            .ok_or_else(|| io::Error::new(ErrorKind::NotFound, "terminal size is required"))?;
+    /// Builds a [`LineReader`] that you can manually turn into a repl or call [`run`](crate::line::LineReader::run) /
+    /// [`background_run`](crate::line::LineReader::background_run) on to start or spawn the repl process
+    ///
+    /// This function can return an `Err` if
+    /// - The supplied terminal writer does not accept crossterm commands
+    /// - No terminal size was provided and a call to [`terminal::size`](https://docs.rs/crossterm/latest/crossterm/terminal/fn.size.html)
+    ///   returns `Err`
+    /// - A custom quit command was supplied and the string contained mismatched quotes
+    ///
+    /// This function will panic if an ill formed [`&'static CommandScheme`](crate::completion::CommandScheme) was supplied
+    pub fn build<Ctx>(mut self) -> io::Result<LineReader<Ctx, W>> {
+        let term_size = match self.term_size {
+            Some((columns, rows)) => {
+                self.term.queue(terminal::SetSize(columns, rows))?;
+                (columns, rows)
+            }
+            None => terminal::size()?,
+        };
         let custom_quit = match self.custom_quit {
             Some(quit_cmd) => Some(shellwords_split(quit_cmd).map_err(|_| {
                 io::Error::new(
@@ -92,11 +102,11 @@ impl<W: Write> LineReaderBuilder<'_, W> {
         let completion = self.completion.map(Completion::from).unwrap_or_default();
 
         crossterm::terminal::enable_raw_mode()?;
-        term.queue(cursor::EnableBlinking)?;
+        self.term.queue(cursor::EnableBlinking)?;
 
         Ok(LineReader::new(
             LineData::new(self.prompt, self.prompt_end, !completion.is_empty()),
-            term,
+            self.term,
             term_size,
             custom_quit,
             completion,

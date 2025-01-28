@@ -3,9 +3,6 @@ mod executor;
 mod line;
 mod style;
 
-#[cfg(any(feature = "runner", feature = "background-runner"))]
-mod general_processor;
-
 pub mod completion;
 pub use crate::builder::*;
 pub use crate::executor::*;

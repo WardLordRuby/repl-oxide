@@ -4,13 +4,15 @@
 use std::io::{self, Stdout};
 
 use clap::{CommandFactory, Parser};
-use crossterm::terminal;
 use tokio::time::{sleep, Duration};
 
 use repl_oxide::{format_for_clap, repl_builder, CommandHandle, Executor};
 
 #[derive(Parser, Debug)]
-#[command(name = "Example App")]
+#[command(
+    name = "Example App",
+    about = "Example app showing repl-oxide's async and persistant state nature"
+)]
 enum Command {
     /// A running total of all inputted numbers
     #[command(alias = "add")]
@@ -74,12 +76,16 @@ async fn main() -> io::Result<()> {
         .print_help()
         .expect("Failed to print help");
 
-    let mut repl = repl_builder()
-        .terminal(io::stdout())
-        .terminal_size(terminal::size()?)
+    let mut command_ctx = CommandContext::default();
+    let mut repl = repl_builder(io::stdout())
         .build()
-        .expect("all required inputs are provided & terminal accepts crossterm commands");
+        .expect("input writer accepts crossterm commands");
 
-    repl.run(&mut CommandContext::default()).await?;
+    // Start repl and await to finish
+    repl.run(&mut command_ctx).await?;
+
+    // Perform cleanup / process final state
+    println!("Uploaded total count: {}, to server!", command_ctx.count);
+
     Ok(())
 }

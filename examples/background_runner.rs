@@ -4,14 +4,9 @@
 use std::{
     fmt::Display,
     io::{self, Stdout},
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
 };
 
 use clap::Parser;
-use crossterm::terminal;
 use tokio::{
     sync::mpsc::Sender,
     time::{sleep, Duration},
@@ -24,7 +19,12 @@ use repl_oxide::{
 };
 
 #[derive(Parser, Debug)]
+#[command(
+    name = "Example App",
+    about = "Example app demonstrating repl-oxide's background-runner feature"
+)]
 enum Command {
+    /// Exit the command line REPL
     #[command(alias = "exit")]
     Quit,
 }
@@ -74,18 +74,17 @@ impl Display for Message {
     }
 }
 
-fn print_timer(active: Arc<AtomicBool>, sender: Sender<Message>) {
+fn print_timer(sender: Sender<Message>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        while active.load(Ordering::Relaxed) {
+        loop {
             sleep(Duration::from_secs(2)).await;
             if sender.send(Message::Info("Timer".into())).await.is_err() {
                 break;
             };
         }
-    });
+    })
 }
 
-// Simulate some async tcp request
 async fn check_for_update() -> Result<(), &'static str> {
     sleep(Duration::from_secs(1)).await;
     Err("Bad response from server")
@@ -93,25 +92,25 @@ async fn check_for_update() -> Result<(), &'static str> {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let (repl_thread_handle, message_sender) = repl_builder()
-        .terminal(io::stdout())
-        .terminal_size(terminal::size()?)
+    // Start repl process in background on dedicated OS thread
+    let (repl_thread_handle, message_sender) = repl_builder(io::stdout())
         .build()
-        .expect("all required inputs are provided & terminal accepts crossterm commands")
+        .expect("input writer accepts crossterm commands")
         .background_run(CommandContext);
 
-    let repl_active = Arc::new(AtomicBool::new(true));
+    // Start example background printer
+    let timer_loop = print_timer(message_sender.clone());
 
-    print_timer(Arc::clone(&repl_active), message_sender.clone());
-
+    // Simulate some async tcp request
     if let Err(err) = check_for_update().await {
         let _ = message_sender.send(Message::Err(err.into())).await;
     }
 
+    // Await repl to finish
     flatten_join(repl_thread_handle).await?;
 
     // Stop timer loop
-    repl_active.store(false, Ordering::SeqCst);
+    timer_loop.abort();
 
     Ok(())
 }

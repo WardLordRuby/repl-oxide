@@ -27,8 +27,12 @@ use tokio_stream::StreamExt;
 
 // MARK: TODOS
 // 1. Make the basic use cases as easy to set up as possible
-// 2. Finish docs + create README.md + add examples for all use cases
-// 3. Fix render bugs on linux + test on macOS
+// 2. Create more examples (completion)
+// 3. Detailed completion docs
+// 4. Finish docs + create README.md + add examples for all use cases
+
+// UNIX BUGS
+// 1. Renders print help incorrectly incorrect
 
 pub type InputEventHook<Ctx, W> =
     dyn Fn(&mut LineReader<Ctx, W>, Event) -> io::Result<HookedEvent<Ctx>>;
@@ -57,6 +61,7 @@ pub struct LineReader<Ctx, W: Write> {
 
 impl<Ctx, W: Write> Drop for LineReader<Ctx, W> {
     fn drop(&mut self) {
+        execute!(self.term, cursor::Show).expect("Still accepting commands");
         crossterm::terminal::disable_raw_mode().expect("enabled on creation")
     }
 }
@@ -385,6 +390,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.term.queue(cursor::Hide)?;
         self.move_to_beginning(self.line_len())?;
         self.term.queue(Print(msg))?.queue(Print("\n"))?;
+        self.cursor_at_start = false;
         Ok(())
     }
 
@@ -465,12 +471,9 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// Render is designed to be called at the top of your main loop  
     /// Eg:
     /// ```ignore
-    /// break_if_err!(line_handle.clear_unwanted_inputs(&mut reader).await);
-    /// break_if_err!(line_handle.render());
+    /// line_handle.clear_unwanted_inputs(&mut reader).await?;
+    /// line_handle.render()?;
     /// ```
-    /// [`break_if_err!`](crate::break_if_err) can be helpful if you are writing your own main loop and you
-    /// don't want main to short circut on an `io::Error` and are okay with using the tracing crate for
-    /// error logging
     pub fn render(&mut self) -> io::Result<()> {
         if std::mem::take(&mut self.uneventful) {
             return Ok(());
@@ -625,10 +628,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// See: [`process_callback!`](crate::process_callback), for reducing boilerplate for callbacks if you plan to use
     /// the tracing crate for error logging
     ///
-    /// [`break_if_err!`](crate::break_if_err) and [`unwrap_or_break!`](crate::unwrap_or_break) can be helpful if you
-    /// are writing your own main loop and you don't want main to short circut on an `io::Error` and are okay with
-    /// using the tracing crate for error logging
-    ///
     /// ```ignore
     /// let mut reader = crossterm::event::EventStream::new();
     /// let mut line_handle = LineReaderBuilder::new()
@@ -716,44 +715,32 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 code: KeyCode::Tab,
                 kind: KeyEventKind::Press,
                 ..
-            }) => {
-                self.try_completion(Direction::Next)?;
-            }
+            }) => self.try_completion(Direction::Next)?,
             Event::Key(KeyEvent {
                 code: KeyCode::BackTab,
                 kind: KeyEventKind::Press,
                 ..
-            }) => {
-                self.try_completion(Direction::Previous)?;
-            }
+            }) => self.try_completion(Direction::Previous)?,
             Event::Key(KeyEvent {
                 code: KeyCode::Char(c),
                 kind: KeyEventKind::Press,
                 ..
-            }) => {
-                self.insert_char(c);
-            }
+            }) => self.insert_char(c),
             Event::Key(KeyEvent {
                 code: KeyCode::Backspace,
                 kind: KeyEventKind::Press,
                 ..
-            }) => {
-                self.remove_char()?;
-            }
+            }) => self.remove_char()?,
             Event::Key(KeyEvent {
                 code: KeyCode::Up,
                 kind: KeyEventKind::Press,
                 ..
-            }) => {
-                self.history_back()?;
-            }
+            }) => self.history_back()?,
             Event::Key(KeyEvent {
                 code: KeyCode::Down,
                 kind: KeyEventKind::Press,
                 ..
-            }) => {
-                self.history_forward()?;
-            }
+            }) => self.history_forward()?,
             Event::Key(KeyEvent {
                 code: KeyCode::Enter,
                 kind: KeyEventKind::Press,
@@ -767,9 +754,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 }
                 self.new_line()?;
             }
-            Event::Resize(x, y) => {
-                self.term_size = (x, y);
-            }
+            Event::Resize(x, y) => self.term_size = (x, y),
             _ => {
                 self.uneventful = true;
                 execute!(self.term, EndSynchronizedUpdate)?;
