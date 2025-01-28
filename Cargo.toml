@@ -14,7 +14,7 @@ background-runner = ["macros", "tokio/macros", "tokio/rt"]
 all = ["macros", "runner", "background-runner"]
 
 [dependencies]
-constcat = "0.5.1"
+constcat = "0.6.0"
 crossterm = { version = "0.28.1", features = ["event-stream"]}
 shellwords = "1.1.0"
 strip-ansi = "0.1.0"
