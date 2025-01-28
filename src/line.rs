@@ -1,17 +1,21 @@
-use crate::completion::{Completion, Direction};
+use crate::{
+    ansi_code::{RED, WHITE},
+    completion::{Completion, Direction},
+};
+use constcat::concat;
 use crossterm::{
     cursor,
     event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
-    style::Stylize,
-    terminal::{Clear, ClearType::FromCursorDown},
+    style::Print,
+    terminal::{BeginSynchronizedUpdate, Clear, ClearType::FromCursorDown, EndSynchronizedUpdate},
     QueueableCommand,
 };
 use shellwords::split as shellwords_split;
 use std::{
     borrow::Cow,
     collections::VecDeque,
-    fmt::Display,
+    fmt::{Debug, Display},
     future::Future,
     io::{self, Write},
     pin::Pin,
@@ -22,9 +26,9 @@ use tokio::time::{timeout, Duration};
 use tokio_stream::StreamExt;
 
 // MARK: TODOS
-// 1. Add a .background_run::<T: Print>() method that is spawnable and gives the user access to a Sender<T> to print background messages
-// 2. Make the basic use cases as easy to set up as possible
-// 3. Finish docs + create README.md + add examples for all use cases
+// 1. Make the basic use cases as easy to set up as possible
+// 2. Finish docs + create README.md + add examples for all use cases
+// 3. Fix render bugs on linux + test on macOS
 
 pub type InputEventHook<Ctx, W> =
     dyn Fn(&mut LineReader<Ctx, W>, Event) -> io::Result<HookedEvent<Ctx>>;
@@ -35,11 +39,6 @@ pub type AsyncCallback<Ctx> =
 
 pub(crate) const PROMPT_END: &str = "> ";
 const DEFAULT_PROMPT: &str = ">";
-
-/// Allows the library user to decide how background messages should be printed
-pub trait Print {
-    fn print(&self);
-}
 
 /// Holds all context for REPL events
 pub struct LineReader<Ctx, W: Write> {
@@ -316,7 +315,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             while stream.fuse().next().await.is_some() {}
         })
         .await;
-        self.term.queue(cursor::Show)?;
         Ok(())
     }
 
@@ -382,10 +380,12 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     }
 
     /// Makes sure background messages are displayed properly
-    pub fn print_background_msg(&mut self, msg: impl Print) -> io::Result<()> {
-        let res = self.move_to_beginning(self.line_len());
-        msg.print();
-        res
+    pub fn print_background_msg<T: Display>(&mut self, msg: T) -> io::Result<()> {
+        execute!(self.term, BeginSynchronizedUpdate)?;
+        self.term.queue(cursor::Hide)?;
+        self.move_to_beginning(self.line_len())?;
+        self.term.queue(Print(msg))?.queue(Print("\n"))?;
+        Ok(())
     }
 
     /// Returns if completion is currently enabled
@@ -452,10 +452,10 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         Ok(())
     }
 
-    fn move_to_line_end(&mut self, line_len: u16) -> io::Result<()> {
+    fn move_to_end(&mut self, line_len: u16) -> io::Result<()> {
         let line_remaining_len = self.line_remainder(line_len);
         if line_remaining_len == 0 {
-            writeln!(self.term)?;
+            self.term.queue(Print("\n"))?;
         }
         self.term.queue(cursor::MoveToColumn(line_remaining_len))?;
         self.cursor_at_start = false;
@@ -484,10 +484,11 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             self.move_to_beginning(line_len.saturating_sub(1))?;
         }
 
-        write!(self.term, "{}", self.line)?;
+        self.term.queue(Print(&self.line))?;
+        self.move_to_end(line_len)?;
+        self.term.queue(cursor::Show)?;
 
-        self.move_to_line_end(line_len)?;
-        self.term.flush()
+        execute!(self.term, EndSynchronizedUpdate)
     }
 
     /// Setting uneventul will skip the next call to `render`
@@ -517,14 +518,14 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
     /// Writes the current line to the terminal and then returns [`clear_line`](Self::clear_line)
     pub fn new_line(&mut self) -> io::Result<String> {
-        writeln!(self.term)?;
+        self.term.queue(Print("\n"))?;
         self.clear_line()
     }
 
     /// Appends "^C" in red to the current line and writes it to the terminal and then returns
     /// [`clear_line`](Self::clear_line)
     pub fn ctrl_c_line(&mut self) -> io::Result<String> {
-        writeln!(self.term, "{}", "^C".red())?;
+        self.term.queue(Print(concat!(RED, "^C", WHITE, "\n")))?;
         self.clear_line()
     }
 
@@ -557,9 +558,9 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     }
 
     fn enter_command(&mut self) -> io::Result<&str> {
+        self.term.queue(cursor::Hide)?;
         let cmd = self.new_line()?;
-        self.add_to_history(cmd);
-        execute!(self.term, cursor::Hide)?;
+        self.add_to_history(&cmd);
         self.command_entered = true;
 
         Ok(self
@@ -570,9 +571,8 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     }
 
     /// Pushes onto history and resets the internal history index to the top
-    #[inline]
-    pub fn add_to_history(&mut self, add: String) {
-        self.history.prev_entries.push(add);
+    pub fn add_to_history(&mut self, add: &str) {
+        self.history.prev_entries.push(add.trim().to_string());
         self.reset_history_idx();
     }
 
@@ -609,10 +609,10 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// main loop to process the set command otherwise will return `EventLoop::Break`  
     pub fn process_close_signal(&mut self) -> io::Result<EventLoop<Ctx>> {
         self.clear_line()?;
+        self.term.queue(cursor::Hide)?;
         let Some(quit_cmd) = self.custom_quit.clone() else {
             return Ok(EventLoop::Break);
         };
-        execute!(self.term, cursor::Hide)?;
         self.command_entered = true;
         Ok(EventLoop::TryProcessInput(Ok(quit_cmd)))
     }
@@ -676,6 +676,8 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// }
     /// ```
     pub fn process_input_event(&mut self, event: Event) -> io::Result<EventLoop<Ctx>> {
+        execute!(self.term, BeginSynchronizedUpdate)?;
+
         if !self.input_hooks.is_empty() {
             if let Event::Key(KeyEvent {
                 kind: KeyEventKind::Press,
@@ -703,21 +705,19 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                     return self.process_close_signal();
                 }
                 self.ctrl_c_line()?;
-                Ok(EventLoop::Continue)
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Char('d'),
                 kind: KeyEventKind::Press,
                 modifiers: KeyModifiers::CONTROL,
                 ..
-            }) => self.process_close_signal(),
+            }) => return self.process_close_signal(),
             Event::Key(KeyEvent {
                 code: KeyCode::Tab,
                 kind: KeyEventKind::Press,
                 ..
             }) => {
                 self.try_completion(Direction::Next)?;
-                Ok(EventLoop::Continue)
             }
             Event::Key(KeyEvent {
                 code: KeyCode::BackTab,
@@ -725,7 +725,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 ..
             }) => {
                 self.try_completion(Direction::Previous)?;
-                Ok(EventLoop::Continue)
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Char(c),
@@ -733,7 +732,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 ..
             }) => {
                 self.insert_char(c);
-                Ok(EventLoop::Continue)
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Backspace,
@@ -741,7 +739,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 ..
             }) => {
                 self.remove_char()?;
-                Ok(EventLoop::Continue)
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Up,
@@ -749,7 +746,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 ..
             }) => {
                 self.history_back()?;
-                Ok(EventLoop::Continue)
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Down,
@@ -757,29 +753,28 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 ..
             }) => {
                 self.history_forward()?;
-                Ok(EventLoop::Continue)
             }
             Event::Key(KeyEvent {
                 code: KeyCode::Enter,
                 kind: KeyEventKind::Press,
                 ..
             }) => {
-                if self.line.input.trim().is_empty() {
-                    self.new_line()?;
-                    return Ok(EventLoop::Continue);
+                if !self.line.input.trim().is_empty() {
+                    return Ok(EventLoop::TryProcessInput(
+                        shellwords_split(self.enter_command()?)
+                            .map_err(|_| ParseErr::MismatchedQuotes),
+                    ));
                 }
-                Ok(EventLoop::TryProcessInput(
-                    shellwords_split(self.enter_command()?).map_err(|_| ParseErr::MismatchedQuotes),
-                ))
+                self.new_line()?;
             }
             Event::Resize(x, y) => {
                 self.term_size = (x, y);
-                Ok(EventLoop::Continue)
             }
             _ => {
                 self.uneventful = true;
-                Ok(EventLoop::Continue)
+                execute!(self.term, EndSynchronizedUpdate)?;
             }
         }
+        Ok(EventLoop::Continue)
     }
 }

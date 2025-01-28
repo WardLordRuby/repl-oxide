@@ -1,20 +1,25 @@
 // The basic `run` method requires the repl-oxide feature flag "runner"
+/*           cargo r --example runner --features="runner"            */
 
 use std::io::{self, Stdout};
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use crossterm::terminal;
 use tokio::time::{sleep, Duration};
 
 use repl_oxide::{format_for_clap, repl_builder, CommandHandle, Executor};
 
 #[derive(Parser, Debug)]
+#[command(name = "Example App")]
 enum Command {
+    /// A running total of all inputted numbers
     #[command(alias = "add")]
-    Count {
-        numbers: Option<Vec<isize>>,
-    },
+    Count { numbers: Option<Vec<isize>> },
+
+    /// Simulate some async tasks
     Test,
+
+    /// Exit the command line REPL
     #[command(alias = "exit")]
     Quit,
 }
@@ -65,6 +70,10 @@ impl Executor<Stdout> for CommandContext {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    Command::command()
+        .print_help()
+        .expect("Failed to print help");
+
     let mut repl = repl_builder()
         .terminal(io::stdout())
         .terminal_size(terminal::size()?)

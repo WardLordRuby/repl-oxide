@@ -428,16 +428,6 @@ impl Default for Indexer {
     }
 }
 
-// impl std::fmt::Debug for Completion {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         writeln!(
-//             f,
-//             "\nrecomendations: {:?}\nrec index: {:?}\nlist index: {:?}",
-//             self.recomendations, self.rec_i, self.list_i
-//         )
-//     }
-// }
-
 #[derive(Default)]
 struct CompletionState {
     curr_command: Option<SliceData>,

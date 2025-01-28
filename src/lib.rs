@@ -3,6 +3,9 @@ mod executor;
 mod line;
 mod style;
 
+#[cfg(any(feature = "runner", feature = "background-runner"))]
+mod general_processor;
+
 pub mod completion;
 pub use crate::builder::*;
 pub use crate::executor::*;
@@ -13,6 +16,9 @@ pub mod macros;
 
 #[cfg(feature = "runner")]
 pub mod runner;
+
+#[cfg(feature = "background-runner")]
+pub mod background_runner;
 
 /// Re-export of [`strip_ansi`](https://docs.rs/strip_ansi/latest/strip_ansi/fn.strip_ansi.html)
 /// the ported chalk regex

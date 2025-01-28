@@ -10,9 +10,11 @@ categories = ["command-line-interface"]
 [features]
 macros = ["dep:tracing"]
 runner = ["macros"]
-all = ["macros", "runner"]
+background-runner = ["macros", "tokio/macros", "tokio/rt"]
+all = ["macros", "runner", "background-runner"]
 
 [dependencies]
+constcat = "0.5.1"
 crossterm = { version = "0.28.1", features = ["event-stream"]}
 shellwords = "1.1.0"
 strip-ansi = "0.1.0"
@@ -28,3 +30,8 @@ tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros"]}
 name = "runner"
 path = "examples/runner.rs"
 required-features = ["runner"]
+
+[[example]]
+name = "background-runner"
+path = "examples/background_runner.rs"
+required-features = ["background-runner"]
