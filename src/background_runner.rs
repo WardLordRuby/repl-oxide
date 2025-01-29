@@ -44,9 +44,22 @@ where
     Ctx: Executor<W> + 'static,
     W: Write + 'static,
 {
+    // MARK: TODO
+    // create example for writing your own repl look with & without macros
+
     /// Spawns a dedicated OS thread to handle the repl, returning you a `tokio::sync::mpsc::Sender` as
     /// a handle to your terminal output stream. You must use this channel anytime you need to display
     /// background messages to the terminal.
+    ///
+    /// Generally for advanced cases it is recomended to write your own read eval print loop over an
+    /// [`EventStream`](https://docs.rs/crossterm/0.28.1/crossterm/event/struct.EventStream.html) this
+    /// way will allow for deeper customization, and make it easier to spot potential dead locks.
+    /// See example at: <EXAMPLE_NAME>
+    ///
+    /// Avoid using `Ctx`'s whos fields contain `Arc<std::sync::Mutex<T>>` as it would be possible to run
+    /// into dead locks if the repl thread tries to access the mutex at the same time as your own main
+    /// thread. Using an async aware [`tokio::sync::Mutex`](https://docs.rs/tokio/latest/tokio/sync/struct.Mutex.html)
+    /// should avoid dead lock scenarios
     pub fn background_run<M>(
         self,
         ctx: Ctx,

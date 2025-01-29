@@ -32,7 +32,7 @@ use tokio_stream::StreamExt;
 // 4. Finish docs + create README.md + add examples for all use cases
 
 // UNIX BUGS
-// 1. Renders print help incorrectly incorrect
+// 1. Renders print help incorrectly
 
 pub type InputEventHook<Ctx, W> =
     dyn Fn(&mut LineReader<Ctx, W>, Event) -> io::Result<HookedEvent<Ctx>>;
