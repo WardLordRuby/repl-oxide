@@ -1,15 +1,9 @@
-use crate::{
-    ansi_code::{RED, WHITE},
-    executor::*,
-    general_event_process,
-    line::{EventLoop, LineReader},
-};
+use crate::{executor::Executor, general_event_process, line::LineReader};
 use crossterm::event::EventStream;
 use std::{
     fmt::Display,
     io::{self, Write},
 };
-use tokio::sync::mpsc::Sender;
 use tokio_stream::StreamExt;
 
 struct SendablePtr<T>(*mut T);
@@ -47,8 +41,8 @@ where
     // MARK: TODO
     // create example for writing your own repl look with & without macros
 
-    /// Spawns a dedicated OS thread to handle the repl, returning you a `tokio::sync::mpsc::Sender` as
-    /// a handle to your terminal output stream. You must use this channel anytime you need to display
+    /// Spawns the repl on a dedicated OS thread, returning you a `tokio::sync::mpsc::Sender` as a
+    /// handle to your terminal output stream. You must use this channel anytime you need to display
     /// background messages to the terminal.
     ///
     /// Generally for advanced cases it is recomended to write your own read eval print loop over an
@@ -65,7 +59,7 @@ where
         ctx: Ctx,
     ) -> (
         std::thread::JoinHandle<tokio::task::JoinHandle<io::Result<()>>>,
-        Sender<M>,
+        tokio::sync::mpsc::Sender<M>,
     )
     where
         M: Display + Send + 'static,

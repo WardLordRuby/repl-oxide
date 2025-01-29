@@ -92,13 +92,13 @@ async fn check_for_update() -> Result<(), &'static str> {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    // Start repl process in background on dedicated OS thread
+    // Spawn repl on a dedicated OS thread
     let (repl_thread_handle, message_sender) = repl_builder(io::stdout())
         .build()
         .expect("input writer accepts crossterm commands")
         .background_run(CommandContext);
 
-    // Start example background printer
+    // Spawn example background printer
     let timer_loop = print_timer(message_sender.clone());
 
     // Simulate some async tcp request

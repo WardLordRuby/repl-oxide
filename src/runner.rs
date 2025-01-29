@@ -1,9 +1,4 @@
-use crate::{
-    ansi_code::{RED, WHITE},
-    executor::*,
-    general_event_process,
-    line::{EventLoop, LineReader},
-};
+use crate::{executor::Executor, general_event_process, line::LineReader};
 use crossterm::event::EventStream;
 use std::io::{self, Write};
 use tokio_stream::StreamExt;

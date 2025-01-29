@@ -29,25 +29,29 @@ macro_rules! process_callback {
 macro_rules! general_event_process {
     ($handle:expr, $ctx:expr, $event_result:expr) => {
         match $handle.process_input_event($event_result?)? {
-            EventLoop::Continue => (),
-            EventLoop::Break => break,
-            EventLoop::Callback(callback) => {
+            $crate::EventLoop::Continue => (),
+            $crate::EventLoop::Break => break,
+            $crate::EventLoop::Callback(callback) => {
                 $crate::process_callback!($handle, callback, $ctx)
             }
-            EventLoop::AsyncCallback(callback) => {
+            $crate::EventLoop::AsyncCallback(callback) => {
                 $crate::process_callback!(a_sync, $handle, callback, $ctx)
             }
-            EventLoop::TryProcessInput(Ok(user_tokens)) => {
+            $crate::EventLoop::TryProcessInput(Ok(user_tokens)) => {
                 match $ctx.try_execute_command(user_tokens).await? {
-                    CommandHandle::Processed => (),
-                    CommandHandle::InsertHook(input_hook) => {
+                    $crate::CommandHandle::Processed => (),
+                    $crate::CommandHandle::InsertHook(input_hook) => {
                         $handle.register_input_hook(input_hook)
                     }
-                    CommandHandle::Exit => break,
+                    $crate::CommandHandle::Exit => break,
                 }
             }
-            EventLoop::TryProcessInput(Err(mismatched_quotes)) => {
-                eprintln!("{RED}{mismatched_quotes}{WHITE}")
+            $crate::EventLoop::TryProcessInput(Err(mismatched_quotes)) => {
+                eprintln!(
+                    "{}{mismatched_quotes}{}",
+                    $crate::ansi_code::RED,
+                    $crate::ansi_code::WHITE
+                )
             }
         }
     };
