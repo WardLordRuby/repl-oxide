@@ -3,24 +3,32 @@ mod executor;
 mod line;
 mod style;
 
+/// Collection of types used for auto completion of user input
 pub mod completion;
+
 pub use crate::builder::*;
 pub use crate::executor::*;
 pub use crate::line::*;
 
 #[cfg(feature = "macros")]
+#[doc(hidden)]
 pub mod macros;
 
 #[cfg(feature = "runner")]
+#[doc(hidden)]
 pub mod runner;
 
 #[cfg(feature = "background-runner")]
-pub mod background_runner;
+mod background_runner;
+
+#[cfg(feature = "background-runner")]
+pub use crate::background_runner::*;
 
 /// Re-export of [`strip_ansi`](https://docs.rs/strip_ansi/latest/strip_ansi/fn.strip_ansi.html)
 /// the ported chalk regex
 pub use strip_ansi::strip_ansi;
 
+/// Collection of ansi color codes
 pub mod ansi_code {
     pub const RED: &str = "\x1b[31m";
     pub const YELLOW: &str = "\x1b[38;5;220m";

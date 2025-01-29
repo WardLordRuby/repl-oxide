@@ -4,6 +4,8 @@ use std::io::{self, Write};
 use tokio_stream::StreamExt;
 
 impl<Ctx: Executor<W>, W: Write> LineReader<Ctx, W> {
+    /// **Required Feature** = "runner"
+    ///
     /// Intended to consume the main function during repl operation. If you are looking to run
     /// the repl in the background see [`background_run`](crate::line::LineReader::background_run)
     /// using the feature flag "background-runner"

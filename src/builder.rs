@@ -8,6 +8,8 @@ use shellwords::split as shellwords_split;
 
 use std::io::{self, ErrorKind, Write};
 
+/// Builder for custom REPL's
+///
 /// Access through [`repl_builder`]
 pub struct LineReaderBuilder<'a, W: Write> {
     completion: Option<&'static CommandScheme>,

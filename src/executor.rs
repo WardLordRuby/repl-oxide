@@ -14,12 +14,19 @@ pub fn format_for_clap(
 }
 
 /// The suggested return type for commands
+///
+/// This is enforced inside the [`Executor`] trait. Provides staight forward returns and a option to insert a custom
+/// [`InputHook`] to take control over [`KeyEvent`](https://docs.rs/crossterm/latest/crossterm/event/struct.KeyEvent.html)
+/// processing
 pub enum CommandHandle<Ctx, W: Write> {
     Processed,
     InsertHook(InputHook<Ctx, W>),
     Exit,
 }
 
+/// Required trait to implement for either pre-made REPL runner. [`run`](crate::line::LineReader::run) /
+/// [`background_run`](crate::line::LineReader::background_run)
+///
 /// The `Executor` trait provides a optional way to structure how commands are handled through your
 /// generic `Ctx` struct.
 ///
@@ -44,7 +51,7 @@ pub enum CommandHandle<Ctx, W: Write> {
 /// }
 /// ```
 ///
-/// Then within your main loop requires some boilerplate to match against the returned `CommandHandle`
+/// Then within your read eval print loop requires some boilerplate to match against the returned `CommandHandle`
 /// ```ignore
 /// Ok(EventLoop::TryProcessInput(Ok(user_tokens))) => {
 ///     match command_context.try_execute_command(user_tokens).await {

@@ -41,7 +41,7 @@ pub type Callback<Ctx> = dyn Fn(&mut Ctx) -> Result<(), InputHookErr>;
 pub type AsyncCallback<Ctx> =
     dyn for<'a> FnOnce(&'a mut Ctx) -> Pin<Box<dyn Future<Output = Result<(), InputHookErr>> + 'a>>;
 
-pub(crate) const PROMPT_END: &str = "> ";
+const DEFAULT_SEPARATOR: &str = "> ";
 const DEFAULT_PROMPT: &str = ">";
 
 /// Holds all context for REPL events
@@ -66,8 +66,30 @@ impl<Ctx, W: Write> Drop for LineReader<Ctx, W> {
     }
 }
 
-/// `InputHook` gives you access to customize how `crossterm::event:Event`'s are processed and how the
-/// [`LineReader`] behaves.
+// MARK: XXX
+// would it be better practice to have a de-init callback to restore the state pre InputHook?
+// this could be coupled with the init + allow for removal of `return_to_initial_state` and
+// let us not have to store the `inital_prompt` within `LineData`
+
+// MARK: TODO
+// Make and update docs to have input hook example
+
+/// Powerful type that allows customization of library default implementations
+///
+/// `InputHook` gives you access to customize how [`Event`](https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html)'s
+/// are processed and how the [`LineReader`] behaves.
+///
+/// Hooks can be initialized with a [`InitLineCallback`] that allows for a place to modify the current
+/// state of the [`LineReader`].
+///
+/// Hooks provides a optional [`Callback`] to run if [`conditionally_remove_hook`](LineReader::conditionally_remove_hook)
+/// removes the `InputHook` mid execution because a spawned [`Callback`] or [`AsyncCallback`] returned `Err`
+///
+/// Hooks require a [`InputEventHook`] this callback can be is entirely responsible for controlling _all_
+/// reactions to [`KeyEvent`](https://docs.rs/crossterm/latest/crossterm/event/struct.KeyEvent.html)'s of kind:
+/// [`KeyEventKind::Press`](https://docs.rs/crossterm/latest/crossterm/event/enum.KeyEventKind.html). This will
+/// act as a manual overide of the libraries event processor. You will have access to manually determine what
+/// methods are called on the [`LineReader`]. See: <INPUT_HOOK_EXAMPLE>
 pub struct InputHook<Ctx, W: Write> {
     uid: HookUID,
     init: Option<Box<InitLineCallback<Ctx, W>>>,
@@ -75,16 +97,21 @@ pub struct InputHook<Ctx, W: Write> {
     event_hook: Box<InputEventHook<Ctx, W>>,
 }
 
-static CALLBACK_UID: AtomicUsize = AtomicUsize::new(0);
+static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
 
-/// Unique identifier used to link [`InputHook`]'s to the `Callback`'s they spawn
+/// Unique linking identifier used for Error handling
+///
+/// `HookUID` links an [`InputEventHook`] to all it's spawned callback's ([`Callback`], [`AsyncCallback`]).
+/// This provides a system for dynamic [`InputHook`] termination. For more information see:
+/// [`conditionally_remove_hook`](LineReader::conditionally_remove_hook)
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct HookUID(usize);
 
 impl HookUID {
+    /// New will always return a unique value
     #[inline]
     pub fn new() -> Self {
-        Self(CALLBACK_UID.fetch_add(1, Ordering::SeqCst))
+        Self(HOOK_UID.fetch_add(1, Ordering::SeqCst))
     }
 }
 
@@ -103,6 +130,7 @@ pub struct InputHookErr {
 }
 
 impl InputHookErr {
+    /// Ensure `uid` is the same [`HookUID`] you pass to [`InputHook::new`]
     #[inline]
     pub fn new<T: Into<Cow<'static, str>>>(uid: HookUID, err: T) -> Self {
         InputHookErr {
@@ -128,7 +156,7 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
         on_callback_err: Option<Box<Callback<Ctx>>>,
         event_hook: Box<InputEventHook<Ctx, W>>,
     ) -> Self {
-        assert!(uid.0 < CALLBACK_UID.load(Ordering::SeqCst));
+        assert!(uid.0 < HOOK_UID.load(Ordering::SeqCst));
         InputHook {
             uid,
             init,
@@ -172,9 +200,10 @@ impl LineData {
         completion_enabled: bool,
     ) -> Self {
         let prompt = prompt.unwrap_or_else(|| String::from(DEFAULT_PROMPT));
+        let prompt_separator = prompt_separator.unwrap_or(DEFAULT_SEPARATOR);
         LineData {
-            prompt_len: LineData::prompt_len(&prompt),
-            prompt_separator: prompt_separator.unwrap_or(PROMPT_END),
+            prompt_len: LineData::prompt_len(&prompt, prompt_separator),
+            prompt_separator,
             inital_prompt: prompt.clone(),
             prompt,
             comp_enabled: completion_enabled,
@@ -182,10 +211,10 @@ impl LineData {
         }
     }
 
-    #[inline]
-    fn prompt_len(prompt: &str) -> u16 {
-        let stripped = strip_ansi(prompt);
-        stripped.chars().count() as u16 + PROMPT_END.chars().count() as u16
+    fn prompt_len(prompt: &str, separator: &str) -> u16 {
+        let prompt_stripped = strip_ansi(prompt);
+        let separator_stripped = strip_ansi(separator);
+        prompt_stripped.chars().count() as u16 + separator_stripped.chars().count() as u16
     }
 
     #[inline]
@@ -224,6 +253,8 @@ impl Display for ParseErr {
     }
 }
 
+/// Communicates the state of an [`InputHook`]
+///
 /// Marker to tell [`process_input_event`](LineReader::process_input_event) to keep the [`InputEventHook`]
 /// active (`Continue`), or to drop it and run [`return_to_initial_state`](LineReader::return_to_initial_state)
 /// (`Release`).
@@ -232,9 +263,11 @@ pub enum HookControl {
     Release,
 }
 
-/// Return type of [`InputEventHook`]. Contains ouput information for custom event processing.
+/// Details ouput information for custom event processing.
 ///
-/// All `HookedEvent` constructors can not fail. They are always wrapped in `Ok` to reduce boilerplate
+/// `HookedEvent` is the return type of [`InputEventHook`]. Contains both the instructions for the read eval print loop
+/// and the new state of [`InputEventHook`]. All `HookedEvent` constructors can not fail. They are always wrapped in `Ok`
+/// to reduce boilerplate
 pub struct HookedEvent<Ctx> {
     event: EventLoop<Ctx>,
     new_state: HookControl,
@@ -247,7 +280,7 @@ impl<Ctx> HookedEvent<Ctx> {
         Ok(Self { event, new_state })
     }
 
-    /// Will tell the main loop to continue and keep the current [`InputEventHook`] active.  
+    /// Will tell the read eval print loop to continue and keep the current [`InputEventHook`] active.  
     /// Constructor can not fail, output is wrapped in `Ok` to reduce boilerplate
     #[inline]
     pub fn continue_hook() -> io::Result<Self> {
@@ -257,7 +290,7 @@ impl<Ctx> HookedEvent<Ctx> {
         })
     }
 
-    /// Will tell the main loop to continue and drop the current [`InputEventHook`].  
+    /// Will tell the read eval print loop to continue and drop the current [`InputEventHook`].  
     /// Constructor can not fail, output is wrapped in `Ok` to reduce boilerplate
     #[inline]
     pub fn release_hook() -> io::Result<Self> {
@@ -268,13 +301,16 @@ impl<Ctx> HookedEvent<Ctx> {
     }
 }
 
-/// The `EventLoop` enum acts as a control router for how your main loops code should react to input events.
+/// Communicates to the REPL how it should react to input events
+///
+/// `EventLoop` enum acts as a control router for how your read eval print loop should react to input events.
 /// It provides mutable access back to your `Ctx` both synchronously and asynchronously. If your callback
 /// can error the [`conditionally_remove_hook`](LineReader::conditionally_remove_hook) method can restore
 /// the intial state of the `LineReader` as well as remove the queued input hook that was responsible for
 /// spawning the callback that resulted in an error.  
 ///
-/// `TryProcessInput` uses `shellwords::split` to parse user input into common shell tokens.
+/// `TryProcessInput` uses [`shellwords::split`](https://docs.rs/shell-words/latest/shell_words/fn.split.html)
+/// to parse user input into common shell tokens.
 pub enum EventLoop<Ctx> {
     Continue,
     Break,
@@ -306,7 +342,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         }
     }
 
-    /// It is recommended to call this method at the top of your main loop see: [`render`](Self::render)  
+    /// It is recommended to call this method at the top of your read eval print loop see: [`render`](Self::render)  
     /// This method will insure all user input events are disregarded when a command is being processed
     pub async fn clear_unwanted_inputs(
         &mut self,
@@ -418,7 +454,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// Sets the currently displayed prompt, prompt will revert back to initial state if an [`InputHook`] is
     /// [`Released`](HookControl)
     pub fn set_prompt(&mut self, prompt: String) {
-        self.line.prompt_len = LineData::prompt_len(&prompt);
+        self.line.prompt_len = LineData::prompt_len(&prompt, self.line.prompt_separator);
         self.line.prompt = prompt;
     }
 
@@ -430,13 +466,13 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
     /// Gets the number of lines wrapped
     #[inline]
-    pub fn line_height(&self, line_len: u16) -> u16 {
+    fn line_height(&self, line_len: u16) -> u16 {
         line_len / self.term_size.0
     }
 
     /// Gets the total length of the line (prompt + user input)
     #[inline]
-    pub fn line_len(&self) -> u16 {
+    fn line_len(&self) -> u16 {
         self.line.prompt_len.saturating_add(self.line.len)
     }
 
@@ -468,7 +504,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         Ok(())
     }
 
-    /// Render is designed to be called at the top of your main loop  
+    /// Render is designed to be called at the top of your read eval print loop  
     /// Eg:
     /// ```ignore
     /// line_handle.clear_unwanted_inputs(&mut reader).await?;
@@ -553,6 +589,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         std::mem::take(&mut self.line.input)
     }
 
+    /// Does not support ansi codes within the input `line`
     pub(crate) fn change_line(&mut self, line: String) -> io::Result<()> {
         self.move_to_beginning(self.line_len())?;
         self.line.len = line.chars().count() as u16;
@@ -609,7 +646,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     }
 
     /// If a [custom quit command](crate::LineReaderBuilder::with_custom_quit_command) is set this will tell the
-    /// main loop to process the set command otherwise will return `EventLoop::Break`  
+    /// read eval print loop to process the set command otherwise will return `EventLoop::Break`  
     pub fn process_close_signal(&mut self) -> io::Result<EventLoop<Ctx>> {
         self.clear_line()?;
         self.term.queue(cursor::Hide)?;
@@ -623,7 +660,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// The main control flow for awaited events from a `crossterm::event::EventStream`. Works well as its
     /// own branch in a `tokio::select!`.
     ///
-    /// Example main loop assuming we have a `Ctx`, `command_context`,  that implements [`Executor`](crate::Executor)
+    /// Example read eval print loop assuming we have a `Ctx`, `command_context`,  that implements [`Executor`](crate::Executor)
     ///
     /// See: [`process_callback!`](crate::process_callback), for reducing boilerplate for callbacks if you plan to use
     /// the tracing crate for error logging

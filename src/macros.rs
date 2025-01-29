@@ -1,7 +1,11 @@
 /// Convenience macro for calling [`conditionally_remove_hook`](crate::line::LineReader::conditionally_remove_hook)
-/// uses tracing's [`error`](https://docs.rs/tracing/latest/tracing/macro.error.html) to log any errors
 ///
-/// Async-callback branch inputs are prefixed by the token 'a_sync'
+/// **Required Feature** = "macros"  
+/// The macros feature flag is included in both "runner" and "background-runner" feature flags
+///
+/// Internally uses tracing's [`error`](https://docs.rs/tracing/latest/tracing/macro.error.html) to log any errors.
+/// Supports both [`Callback`](crate::line::Callback) and [`AsyncCallback`](crate::line::AsyncCallback).
+/// `AsyncCallback` branch is accessed by prefixing inputs with the token 'a_sync'
 #[macro_export]
 macro_rules! process_callback {
     ($line:expr, $callback:expr, $ctx:expr) => {
@@ -22,9 +26,13 @@ macro_rules! process_callback {
     };
 }
 
-/// Convenience macro for the generalized process of handling an [`Event`](https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html)
-/// internally uses the [`process_callback`] macro that does rely on tracing's [`error`](https://docs.rs/tracing/latest/tracing/macro.error.html)
-/// to log any errors
+/// Convenience macro for the generalized process of handling a streamed [`Event`](https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html)
+///
+/// **Required Feature** = "macros"  
+/// The macros feature flag is included in both "runner" and "background-runner" feature flags
+///
+/// Internally uses the [`process_callback`] macro that relies on tracing's [`error`](https://docs.rs/tracing/latest/tracing/macro.error.html)
+/// to log any errors.
 #[macro_export]
 macro_rules! general_event_process {
     ($handle:expr, $ctx:expr, $event_result:expr) => {

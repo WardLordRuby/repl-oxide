@@ -21,8 +21,10 @@ impl<T> SendablePtr<T> {
     }
 }
 
-/// Convience function to flatten the Os thread handle that is returned from
-/// [`background_run`](crate::line::LineReader::background_run)
+/// Convience function to flatten [`background_run`](crate::line::LineReader::background_run)
+/// nested thread handles
+///
+/// **Required Feature** = "background-runner"
 pub async fn flatten_join(
     handle: std::thread::JoinHandle<tokio::task::JoinHandle<io::Result<()>>>,
 ) -> io::Result<()> {
@@ -41,6 +43,8 @@ where
     // MARK: TODO
     // create example for writing your own repl look with & without macros
 
+    /// **Required Feature** = "background-runner"
+    ///
     /// Spawns the repl on a dedicated OS thread, returning you a `tokio::sync::mpsc::Sender` as a
     /// handle to your terminal output stream. You must use this channel anytime you need to display
     /// background messages to the terminal.

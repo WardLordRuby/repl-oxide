@@ -14,8 +14,7 @@ use tokio::{
 
 use repl_oxide::{
     ansi_code::{GREEN, RED, WHITE},
-    background_runner::flatten_join,
-    format_for_clap, repl_builder, CommandHandle, Executor,
+    flatten_join, format_for_clap, repl_builder, CommandHandle, Executor,
 };
 
 #[derive(Parser, Debug)]
