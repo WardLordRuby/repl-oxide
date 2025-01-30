@@ -78,8 +78,11 @@ impl<Ctx, W: Write> Drop for LineReader<Ctx, W> {
 /// `InputHook` gives you access to customize how [`Event`]'s are processed and how the [`LineReader`]
 /// behaves.
 ///
-/// Hooks can be initialized with a [`InitLineCallback`] that allows for a place to modify the current
-/// state of the [`LineReader`].
+/// Hooks can be initialized with a [`ModLineState`] that allows for a place to modify the current state
+/// of the [`LineReader`]. To do so use [`new_hook_states`], note you must also supply a seperate callback
+/// to revert the changes back to your desired state when the `InputHook` is dropped.
+///
+/// Otherwise use [`no_state_change`] to not specify new and previous states.
 ///
 /// Hooks provides a optional [`Callback`] to run if [`conditionally_remove_hook`] removes the `InputHook`
 /// mid execution because a spawned [`Callback`] or [`AsyncCallback`] returned `Err`
@@ -93,6 +96,8 @@ impl<Ctx, W: Write> Drop for LineReader<Ctx, W> {
 /// [`KeyEvent`]: <https://docs.rs/crossterm/latest/crossterm/event/struct.KeyEvent.html>
 /// [`KeyEventKind::Press`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.KeyEventKind.html>
 /// [`conditionally_remove_hook`]: LineReader::conditionally_remove_hook
+/// [`new_hook_states`]: InputHook::new_hook_states
+/// [`no_state_change`]: InputHook::no_state_change
 pub struct InputHook<Ctx, W: Write> {
     uid: HookUID,
     init_revert: HookStates<Ctx, W>,
@@ -293,10 +298,9 @@ impl Display for ParseErr {
 /// Communicates the state of an [`InputHook`]
 ///
 /// Marker to tell [`process_input_event`] to keep the [`InputEventHook`] active (`Continue`), or to drop
-/// it and run [`return_to_initial_state`] (`Release`).
+/// it (`Release`), and run the [`ModLineState`] revert callback if one was set.
 ///
 /// [`process_input_event`]: LineReader::process_input_event
-/// [`return_to_initial_state`]: LineReader::return_to_initial_state
 pub enum HookControl {
     Continue,
     Release,
