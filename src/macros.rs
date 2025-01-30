@@ -4,7 +4,10 @@
 /// The macros feature flag is included in both "runner" and "spawner" feature flags
 ///
 /// Internally uses tracing's [`error!`] to log any errors. Supports both [`Callback`] and [`AsyncCallback`].
-/// The async callback branch is accessed by prefixing inputs with the token 'a_sync'
+/// The async callback branch is accessed by prefixing inputs with the token 'a_sync'.
+///
+/// This macro internally uses the try operator on an `io::Result<()>`. Requiring the outer scope of to also
+/// have the same signature.
 ///
 /// [`AsyncCallback`]: crate::line::AsyncCallback
 /// [`Callback`]: crate::line::Callback
@@ -36,6 +39,10 @@ macro_rules! process_callback {
 /// The macros feature flag is included in both "runner" and "spawner" feature flags
 ///
 /// Internally uses the [`process_callback`] macro that relies on tracing's [`error!`] to log any errors.
+///
+/// This macro internally uses the try operator on an `io::Result<()>`, and contains break points for the
+/// run eval process loop. Requiring the outer scope of to have the same signature, and be called from
+/// within a loop.
 ///
 /// [`Event`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html>
 /// [`error!`]: <https://docs.rs/tracing/latest/tracing/macro.error.html>

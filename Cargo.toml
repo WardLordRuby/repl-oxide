@@ -6,6 +6,7 @@ license = "MIT"
 repository = "https://github.com/WardLordRuby/repl-oxide"
 keywords = ["repl", "interpreter", "clap"]
 categories = ["command-line-interface"]
+rust-version = "1.75.0"
 
 [features]
 macros = ["dep:tracing"]

@@ -1217,7 +1217,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
             match self.completion.indexer.recs {
                 i if i >= USER_INPUT && i < self.completion.recomendations.len() as i8 => (),
-                ..USER_INPUT => {
+                i if i < USER_INPUT => {
                     self.completion.indexer.recs = self.completion.recomendations.len() as i8 - 1
                 }
                 _ => self.completion.indexer.recs = USER_INPUT,

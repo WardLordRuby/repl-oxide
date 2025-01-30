@@ -254,9 +254,7 @@ impl LineData {
     }
 
     fn prompt_len(prompt: &str, separator: &str) -> u16 {
-        let prompt_stripped = strip_ansi(prompt);
-        let separator_stripped = strip_ansi(separator);
-        prompt_stripped.chars().count() as u16 + separator_stripped.chars().count() as u16
+        strip_ansi(prompt).chars().count() as u16 + strip_ansi(separator).chars().count() as u16
     }
 
     #[inline]
