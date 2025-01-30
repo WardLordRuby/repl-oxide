@@ -35,11 +35,13 @@ use tokio_stream::StreamExt;
 // 1. Renders print help incorrectly
 
 pub type InputEventHook<Ctx, W> =
-    dyn Fn(&mut LineReader<Ctx, W>, Event) -> io::Result<HookedEvent<Ctx>>;
-pub type ModLineState<Ctx, W> = dyn FnOnce(&mut LineReader<Ctx, W>) -> io::Result<()>;
-pub type Callback<Ctx> = dyn Fn(&mut Ctx) -> Result<(), InputHookErr>;
-pub type AsyncCallback<Ctx> =
-    dyn for<'a> FnOnce(&'a mut Ctx) -> Pin<Box<dyn Future<Output = Result<(), InputHookErr>> + 'a>>;
+    dyn Fn(&mut LineReader<Ctx, W>, Event) -> io::Result<HookedEvent<Ctx>> + Send;
+pub type ModLineState<Ctx, W> = dyn FnOnce(&mut LineReader<Ctx, W>) -> io::Result<()> + Send;
+pub type Callback<Ctx> = dyn Fn(&mut Ctx) -> Result<(), InputHookErr> + Send;
+pub type AsyncCallback<Ctx> = dyn for<'a> FnOnce(
+        &'a mut Ctx,
+    ) -> Pin<Box<dyn Future<Output = Result<(), InputHookErr>> + Send + 'a>>
+    + Send;
 
 const DEFAULT_SEPARATOR: &str = "> ";
 const DEFAULT_PROMPT: &str = ">";

@@ -10,8 +10,8 @@ categories = ["command-line-interface"]
 [features]
 macros = ["dep:tracing"]
 runner = ["macros"]
-background-runner = ["macros", "tokio/macros", "tokio/rt"]
-all = ["macros", "runner", "background-runner"]
+spawner = ["runner", "tokio/macros", "tokio/rt"]
+all = ["spawner"]
 
 [dependencies]
 constcat = "0.6.0"
@@ -32,6 +32,6 @@ path = "examples/runner.rs"
 required-features = ["runner"]
 
 [[example]]
-name = "background-runner"
-path = "examples/background_runner.rs"
-required-features = ["background-runner"]
+name = "spawner"
+path = "examples/spawner.rs"
+required-features = ["spawner"]

@@ -78,7 +78,7 @@ impl<W: Write> LineReaderBuilder<'_, W> {
         self
     }
 
-    /// Builds a [`LineReader`] that you can manually turn into a repl or call [`run`] / [`background_run`]
+    /// Builds a [`LineReader`] that you can manually turn into a repl or call [`run`] / [`spawn`]
     /// on to start or spawn the repl process
     ///
     /// This function can return an `Err` if
@@ -89,7 +89,7 @@ impl<W: Write> LineReaderBuilder<'_, W> {
     /// This function will panic if an ill formed [`&'static CommandScheme`] was supplied
     ///
     /// [`run`]: crate::line::LineReader::run
-    /// [`background_run`]: crate::line::LineReader::background_run
+    /// [`spawn`]: crate::line::LineReader::spawn
     /// [`&'static CommandScheme`]: crate::completion::CommandScheme
     /// [`terminal::size`]: <https://docs.rs/crossterm/latest/crossterm/terminal/fn.size.html>
     pub fn build<Ctx>(mut self) -> io::Result<LineReader<Ctx, W>> {

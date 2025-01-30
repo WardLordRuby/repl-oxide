@@ -1,7 +1,7 @@
 /// Convenience macro for calling [`conditionally_remove_hook`]
 ///
 /// **Required Feature** = "macros"  
-/// The macros feature flag is included in both "runner" and "background-runner" feature flags
+/// The macros feature flag is included in both "runner" and "spawner" feature flags
 ///
 /// Internally uses tracing's [`error!`] to log any errors. Supports both [`Callback`] and [`AsyncCallback`].
 /// The async callback branch is accessed by prefixing inputs with the token 'a_sync'
@@ -33,7 +33,7 @@ macro_rules! process_callback {
 /// Convenience macro for the generalized process of handling a streamed [`Event`]
 ///
 /// **Required Feature** = "macros"  
-/// The macros feature flag is included in both "runner" and "background-runner" feature flags
+/// The macros feature flag is included in both "runner" and "spawner" feature flags
 ///
 /// Internally uses the [`process_callback`] macro that relies on tracing's [`error!`] to log any errors.
 ///

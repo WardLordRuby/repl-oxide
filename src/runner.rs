@@ -3,13 +3,13 @@ use crossterm::event::EventStream;
 use std::io::{self, Write};
 use tokio_stream::StreamExt;
 
-impl<Ctx: Executor<W>, W: Write> LineReader<Ctx, W> {
+impl<Ctx: Executor<W>, W: Write + Send> LineReader<Ctx, W> {
     /// **Required Feature** = "runner"
     ///
-    /// Intended to consume the main function during repl operation. If you are looking to run
-    /// the repl in the background see: [`background_run`] using the feature flag "background-runner"
+    /// Intended to consume the main function during repl operation. If you are looking to spawn the
+    /// repl to be managed by a tokio runtime see: [`spawn`] using the feature flag "spawner"
     ///
-    /// [`background_run`]: crate::line::LineReader::background_run
+    /// [`spawn`]: crate::line::LineReader::spawn
     pub async fn run(&mut self, ctx: &mut Ctx) -> io::Result<()> {
         let mut reader = EventStream::new();
 

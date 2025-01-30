@@ -1,5 +1,5 @@
-// The `background-run` method requires the repl-oxide feature flag "background-runner"
-/*        cargo r --example background-runner --features="background-runner"         */
+// The `spawn` method requires the repl-oxide feature flag "spawner"
+/*         cargo r --example spawner --features="spawner"          */
 
 use std::{
     fmt::Display,
@@ -14,13 +14,13 @@ use tokio::{
 
 use repl_oxide::{
     ansi_code::{GREEN, RED, WHITE},
-    flatten_join, format_for_clap, repl_builder, CommandHandle, Executor,
+    format_for_clap, repl_builder, CommandHandle, Executor,
 };
 
 #[derive(Parser, Debug)]
 #[command(
     name = "Example App",
-    about = "Example app demonstrating repl-oxide's background-runner feature"
+    about = "Example app demonstrating repl-oxide's spawner feature"
 )]
 enum Command {
     /// Exit the command line REPL
@@ -85,11 +85,12 @@ async fn check_for_update() -> Result<(), &'static str> {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    // Spawn repl on a dedicated OS thread
-    let (repl_thread_handle, message_sender) = repl_builder(io::stdout())
-        .build()
-        .expect("input writer accepts crossterm commands")
-        .background_run(CommandContext);
+    // Spawn repl on the current runtime
+    let (repl_task, message_sender): (tokio::task::JoinHandle<io::Result<()>>, Sender<Message>) =
+        repl_builder(io::stdout())
+            .build()
+            .expect("input writer accepts crossterm commands")
+            .spawn(CommandContext);
 
     // Spawn example background printer
     let timer_loop = print_timer(message_sender.clone());
@@ -100,7 +101,7 @@ async fn main() -> io::Result<()> {
     }
 
     // Await repl to finish
-    flatten_join(repl_thread_handle).await?;
+    repl_task.await??;
 
     // Stop timer loop
     timer_loop.abort();

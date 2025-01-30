@@ -18,11 +18,9 @@ pub mod macros;
 #[doc(hidden)]
 pub mod runner;
 
-#[cfg(feature = "background-runner")]
-mod background_runner;
-
-#[cfg(feature = "background-runner")]
-pub use crate::background_runner::*;
+#[cfg(feature = "spawner")]
+#[doc(hidden)]
+pub mod spawner;
 
 /// Re-export of [`strip_ansi`] the ported chalk regex
 ///

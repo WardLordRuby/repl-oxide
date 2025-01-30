@@ -27,7 +27,7 @@ pub enum CommandHandle<Ctx, W: Write> {
     Exit,
 }
 
-/// Required trait to implement for either pre-made REPL runner. [`run`] / [`background_run`]
+/// Required trait to implement for either pre-made REPL runner. [`run`] / [`spawn`]
 ///
 /// The `Executor` trait provides a optional way to structure how commands are handled through your generic
 /// `Ctx` struct.
@@ -62,12 +62,12 @@ pub enum CommandHandle<Ctx, W: Write> {
 /// ```
 /// [`Stdout`]: std::io::Stdout
 /// [`run`]: crate::line::LineReader::run
-/// [`background_run`]: crate::line::LineReader::background_run
+/// [`spawn`]: crate::line::LineReader::spawn
 /// [`try_parse_from`]: <https://docs.rs/clap/latest/clap/trait.Parser.html#method.try_parse_from>
 /// [`clap_derive::Parser`]: <https://docs.rs/clap/latest/clap/trait.Parser.html>
-pub trait Executor<W: Write>: std::marker::Sized {
+pub trait Executor<W: Write + Send>: std::marker::Sized + Send {
     fn try_execute_command(
         &mut self,
         user_tokens: Vec<String>,
-    ) -> impl Future<Output = io::Result<CommandHandle<Self, W>>>;
+    ) -> impl Future<Output = io::Result<CommandHandle<Self, W>>> + Send;
 }
