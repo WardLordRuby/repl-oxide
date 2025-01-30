@@ -24,8 +24,9 @@ mod background_runner;
 #[cfg(feature = "background-runner")]
 pub use crate::background_runner::*;
 
-/// Re-export of [`strip_ansi`](https://docs.rs/strip_ansi/latest/strip_ansi/fn.strip_ansi.html)
-/// the ported chalk regex
+/// Re-export of [`strip_ansi`] the ported chalk regex
+///
+/// [`strip_ansi`]: <https://docs.rs/strip_ansi/latest/strip_ansi/fn.strip_ansi.html>
 pub use strip_ansi::strip_ansi;
 
 /// Collection of ansi color codes

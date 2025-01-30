@@ -22,8 +22,7 @@ pub struct LineReaderBuilder<'a, W: Write> {
 
 /// Builder for [`LineReader`]
 ///
-/// `LineReader` must include a terminal that is compatable with executing commands via the
-/// `crossterm` crate.
+/// `LineReader` must include a terminal that is compatable with executing commands via the `crossterm` crate.
 pub fn repl_builder<W: Write>(terminal: W) -> LineReaderBuilder<'static, W> {
     LineReaderBuilder {
         completion: None,
@@ -37,7 +36,9 @@ pub fn repl_builder<W: Write>(terminal: W) -> LineReaderBuilder<'static, W> {
 
 impl<'a, W: Write> LineReaderBuilder<'a, W> {
     /// Supply a custom command to be executed when the user tries to quit with 'ctrl + c' when the current
-    /// line is empty. If none is supplied `EventLoop::Break` will be returned.
+    /// line is empty. If none is supplied [`EventLoop::Break`] will be returned.
+    ///
+    /// [`EventLoop::Break`]: crate::line::EventLoop
     pub fn with_custom_quit_command(mut self, quit_cmd: &'a str) -> Self {
         self.custom_quit = Some(quit_cmd);
         self
@@ -45,11 +46,14 @@ impl<'a, W: Write> LineReaderBuilder<'a, W> {
 }
 
 impl<W: Write> LineReaderBuilder<'_, W> {
-    /// Specify a starting size the the terminal should be set to on [`build`](Self::build) if no size
-    /// is supplied then size is found with a call to
-    /// [`terminal::size`](https://docs.rs/crossterm/latest/crossterm/terminal/fn.size.html)  
+    /// Specify a starting size the the terminal should be set to on [`build`] if no size is supplied then
+    /// size is found with a call to [`terminal::size`]
+    ///
     /// `size`: `(columns, rows)`  
     /// The top left cell is represented `(1, 1)`.
+    ///
+    /// [`build`]: Self::build
+    /// [`terminal::size`]: <https://docs.rs/crossterm/latest/crossterm/terminal/fn.size.html>
     pub fn with_size(mut self, size: (u16, u16)) -> Self {
         self.term_size = Some(size);
         self
@@ -74,16 +78,20 @@ impl<W: Write> LineReaderBuilder<'_, W> {
         self
     }
 
-    /// Builds a [`LineReader`] that you can manually turn into a repl or call [`run`](crate::line::LineReader::run) /
-    /// [`background_run`](crate::line::LineReader::background_run) on to start or spawn the repl process
+    /// Builds a [`LineReader`] that you can manually turn into a repl or call [`run`] / [`background_run`]
+    /// on to start or spawn the repl process
     ///
     /// This function can return an `Err` if
     /// - The supplied terminal writer does not accept crossterm commands
-    /// - No terminal size was provided and a call to [`terminal::size`](https://docs.rs/crossterm/latest/crossterm/terminal/fn.size.html)
-    ///   returns `Err`
+    /// - No terminal size was provided and a call to [`terminal::size`] returns `Err`
     /// - A custom quit command was supplied and the string contained mismatched quotes
     ///
-    /// This function will panic if an ill formed [`&'static CommandScheme`](crate::completion::CommandScheme) was supplied
+    /// This function will panic if an ill formed [`&'static CommandScheme`] was supplied
+    ///
+    /// [`run`]: crate::line::LineReader::run
+    /// [`background_run`]: crate::line::LineReader::background_run
+    /// [`&'static CommandScheme`]: crate::completion::CommandScheme
+    /// [`terminal::size`]: <https://docs.rs/crossterm/latest/crossterm/terminal/fn.size.html>
     pub fn build<Ctx>(mut self) -> io::Result<LineReader<Ctx, W>> {
         let term_size = match self.term_size {
             Some((columns, rows)) => {

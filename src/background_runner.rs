@@ -21,10 +21,11 @@ impl<T> SendablePtr<T> {
     }
 }
 
-/// Convience function to flatten [`background_run`](crate::line::LineReader::background_run)
-/// nested thread handles
+/// Convience function to flatten [`background_run`] nested thread handles
 ///
 /// **Required Feature** = "background-runner"
+///
+/// [`background_run`]: crate::line::LineReader::background_run
 pub async fn flatten_join(
     handle: std::thread::JoinHandle<tokio::task::JoinHandle<io::Result<()>>>,
 ) -> io::Result<()> {
@@ -45,19 +46,21 @@ where
 
     /// **Required Feature** = "background-runner"
     ///
-    /// Spawns the repl on a dedicated OS thread, returning you a `tokio::sync::mpsc::Sender` as a
-    /// handle to your terminal output stream. You must use this channel anytime you need to display
-    /// background messages to the terminal.
+    /// Spawns the repl on a dedicated OS thread, returning you a [`tokio::sync::mpsc::Sender`] as a handle
+    /// to your terminal output stream. You must use this channel anytime you need to display background
+    /// messages to the terminal.
     ///
     /// Generally for advanced cases it is recomended to write your own read eval print loop over an
-    /// [`EventStream`](https://docs.rs/crossterm/0.28.1/crossterm/event/struct.EventStream.html) this
-    /// way will allow for deeper customization, and make it easier to spot potential dead locks.
-    /// See example at: <EXAMPLE_NAME>
+    /// [`EventStream`] this way will allow for deeper customization, and make it easier to spot potential
+    /// dead locks. See example at: <EXAMPLE_NAME>
     ///
     /// Avoid using `Ctx`'s whos fields contain `Arc<std::sync::Mutex<T>>` as it would be possible to run
     /// into dead locks if the repl thread tries to access the mutex at the same time as your own main
-    /// thread. Using an async aware [`tokio::sync::Mutex`](https://docs.rs/tokio/latest/tokio/sync/struct.Mutex.html)
-    /// should avoid dead lock scenarios
+    /// thread. Using an async aware [`tokio::sync::Mutex`] should avoid dead lock scenarios
+    ///
+    /// [`EventStream`]: <https://docs.rs/crossterm/0.28.1/crossterm/event/struct.EventStream.html>
+    /// [`tokio::sync::Mutex`]: <https://docs.rs/tokio/latest/tokio/sync/struct.Mutex.html>
+    /// [`tokio::sync::mpsc::Sender`]: <https://docs.rs/tokio/latest/tokio/sync/mpsc/struct.Sender.html>
     pub fn background_run<M>(
         self,
         ctx: Ctx,

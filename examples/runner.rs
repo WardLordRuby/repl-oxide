@@ -62,10 +62,7 @@ impl Executor<Stdout> for CommandContext {
                 Command::Test => CommandContext::async_test().await,
                 Command::Quit => Ok(CommandHandle::Exit),
             },
-            Err(err) => {
-                err.print()?;
-                Ok(CommandHandle::Processed)
-            }
+            Err(err) => err.print().map(|_| CommandHandle::Processed),
         }
     }
 }

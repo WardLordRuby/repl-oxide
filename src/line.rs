@@ -36,13 +36,15 @@ use tokio_stream::StreamExt;
 
 pub type InputEventHook<Ctx, W> =
     dyn Fn(&mut LineReader<Ctx, W>, Event) -> io::Result<HookedEvent<Ctx>>;
-pub type InitLineCallback<Ctx, W> = dyn FnOnce(&mut LineReader<Ctx, W>) -> io::Result<()>;
+pub type ModLineState<Ctx, W> = dyn FnOnce(&mut LineReader<Ctx, W>) -> io::Result<()>;
 pub type Callback<Ctx> = dyn Fn(&mut Ctx) -> Result<(), InputHookErr>;
 pub type AsyncCallback<Ctx> =
     dyn for<'a> FnOnce(&'a mut Ctx) -> Pin<Box<dyn Future<Output = Result<(), InputHookErr>> + 'a>>;
 
 const DEFAULT_SEPARATOR: &str = "> ";
 const DEFAULT_PROMPT: &str = ">";
+
+static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
 
 /// Holds all context for REPL events
 pub struct LineReader<Ctx, W: Write> {
@@ -62,63 +64,133 @@ pub struct LineReader<Ctx, W: Write> {
 impl<Ctx, W: Write> Drop for LineReader<Ctx, W> {
     fn drop(&mut self) {
         execute!(self.term, cursor::Show).expect("Still accepting commands");
-        crossterm::terminal::disable_raw_mode().expect("enabled on creation")
+        crossterm::terminal::disable_raw_mode().expect("enabled on creation");
     }
 }
-
-// MARK: XXX
-// would it be better practice to have a de-init callback to restore the state pre InputHook?
-// this could be coupled with the init + allow for removal of `return_to_initial_state` and
-// let us not have to store the `inital_prompt` within `LineData`
 
 // MARK: TODO
 // Make and update docs to have input hook example
 
 /// Powerful type that allows customization of library default implementations
 ///
-/// `InputHook` gives you access to customize how [`Event`](https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html)'s
-/// are processed and how the [`LineReader`] behaves.
+/// `InputHook` gives you access to customize how [`Event`]'s are processed and how the [`LineReader`]
+/// behaves.
 ///
 /// Hooks can be initialized with a [`InitLineCallback`] that allows for a place to modify the current
 /// state of the [`LineReader`].
 ///
-/// Hooks provides a optional [`Callback`] to run if [`conditionally_remove_hook`](LineReader::conditionally_remove_hook)
-/// removes the `InputHook` mid execution because a spawned [`Callback`] or [`AsyncCallback`] returned `Err`
+/// Hooks provides a optional [`Callback`] to run if [`conditionally_remove_hook`] removes the `InputHook`
+/// mid execution because a spawned [`Callback`] or [`AsyncCallback`] returned `Err`
 ///
 /// Hooks require a [`InputEventHook`] this callback can be is entirely responsible for controlling _all_
-/// reactions to [`KeyEvent`](https://docs.rs/crossterm/latest/crossterm/event/struct.KeyEvent.html)'s of kind:
-/// [`KeyEventKind::Press`](https://docs.rs/crossterm/latest/crossterm/event/enum.KeyEventKind.html). This will
-/// act as a manual overide of the libraries event processor. You will have access to manually determine what
-/// methods are called on the [`LineReader`]. See: <INPUT_HOOK_EXAMPLE>
+/// reactions to [`KeyEvent`]'s of kind: [`KeyEventKind::Press`]. This will act as a manual overide of the
+/// libraries event processor. You will have access to manually determine what methods are called on the
+/// [`LineReader`]. See: <INPUT_HOOK_EXAMPLE>
+///
+/// [`Event`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html>
+/// [`KeyEvent`]: <https://docs.rs/crossterm/latest/crossterm/event/struct.KeyEvent.html>
+/// [`KeyEventKind::Press`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.KeyEventKind.html>
+/// [`conditionally_remove_hook`]: LineReader::conditionally_remove_hook
 pub struct InputHook<Ctx, W: Write> {
     uid: HookUID,
-    init: Option<Box<InitLineCallback<Ctx, W>>>,
+    init_revert: HookStates<Ctx, W>,
     on_callback_err: Option<Box<Callback<Ctx>>>,
     event_hook: Box<InputEventHook<Ctx, W>>,
 }
 
-static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
+pub struct HookStates<Ctx, W: Write> {
+    init: Option<Box<ModLineState<Ctx, W>>>,
+    revert: Option<Box<ModLineState<Ctx, W>>>,
+}
+
+impl<Ctx, W: Write> Default for HookStates<Ctx, W> {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            init: None,
+            revert: None,
+        }
+    }
+}
+
+impl<Ctx, W: Write> InputHook<Ctx, W> {
+    /// For use when creating an `InputHook` that contains a callback that can error, else use
+    /// [`with_new_uid`]. Ensure that the `InputHook` and [`InputHookErr`] share the
+    /// same [`HookUID`] obtained through [`HookUID::new`].
+    ///
+    /// [`with_new_uid`]: Self::with_new_uid
+    pub fn new(
+        uid: HookUID,
+        init_revert: HookStates<Ctx, W>,
+        on_callback_err: Option<Box<Callback<Ctx>>>,
+        event_hook: Box<InputEventHook<Ctx, W>>,
+    ) -> Self {
+        assert!(uid.0 < HOOK_UID.load(Ordering::SeqCst));
+        InputHook {
+            uid,
+            init_revert,
+            on_callback_err,
+            event_hook,
+        }
+    }
+
+    /// For use when creating an `InputHook` that does not contain a callback that can error, else use
+    /// [`new`].
+    ///
+    /// [`new`]: Self::new
+    pub fn with_new_uid(
+        init_revert: HookStates<Ctx, W>,
+        on_callback_err: Option<Box<Callback<Ctx>>>,
+        event_hook: Box<InputEventHook<Ctx, W>>,
+    ) -> Self {
+        InputHook {
+            uid: HookUID::new(),
+            init_revert,
+            on_callback_err,
+            event_hook,
+        }
+    }
+
+    /// For use when creating an `InputHook` that doesn't need to change the state on init and teardown
+    #[inline]
+    pub fn no_state_change() -> HookStates<Ctx, W> {
+        HookStates::default()
+    }
+
+    /// For use when creating an `InputHook` that has a unique state to display
+    pub fn new_hook_states(
+        init: Box<ModLineState<Ctx, W>>,
+        revert: Box<ModLineState<Ctx, W>>,
+    ) -> HookStates<Ctx, W> {
+        HookStates {
+            init: Some(init),
+            revert: Some(revert),
+        }
+    }
+}
 
 /// Unique linking identifier used for Error handling
 ///
 /// `HookUID` links an [`InputEventHook`] to all it's spawned callback's ([`Callback`], [`AsyncCallback`]).
 /// This provides a system for dynamic [`InputHook`] termination. For more information see:
-/// [`conditionally_remove_hook`](LineReader::conditionally_remove_hook)
+/// [`conditionally_remove_hook`]
+///
+/// [`conditionally_remove_hook`]: LineReader::conditionally_remove_hook
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct HookUID(usize);
+
+impl Default for HookUID {
+    #[inline]
+    fn default() -> Self {
+        Self(HOOK_UID.fetch_add(1, Ordering::SeqCst))
+    }
+}
 
 impl HookUID {
     /// New will always return a unique value
     #[inline]
     pub fn new() -> Self {
-        Self(HOOK_UID.fetch_add(1, Ordering::SeqCst))
-    }
-}
-
-impl Default for HookUID {
-    #[inline]
-    fn default() -> Self {
-        Self::new()
+        Self::default()
     }
 }
 
@@ -146,44 +218,8 @@ impl Display for InputHookErr {
     }
 }
 
-impl<Ctx, W: Write> InputHook<Ctx, W> {
-    /// For use when creating an `InputHook` that contains a callback that can error, else use
-    /// [`with_new_uid`](Self::with_new_uid). Ensure that the `InputHook` and [`InputHookErr`] share the
-    /// same [`HookUID`] obtained through [`HookUID::new`].
-    pub fn new(
-        uid: HookUID,
-        init: Option<Box<InitLineCallback<Ctx, W>>>,
-        on_callback_err: Option<Box<Callback<Ctx>>>,
-        event_hook: Box<InputEventHook<Ctx, W>>,
-    ) -> Self {
-        assert!(uid.0 < HOOK_UID.load(Ordering::SeqCst));
-        InputHook {
-            uid,
-            init,
-            on_callback_err,
-            event_hook,
-        }
-    }
-
-    /// For use when creating an `InputHook` that does not contain a callback that can error, else use
-    /// [`new`](Self::new).
-    pub fn with_new_uid(
-        init: Option<Box<InitLineCallback<Ctx, W>>>,
-        on_callback_err: Option<Box<Callback<Ctx>>>,
-        event_hook: Box<InputEventHook<Ctx, W>>,
-    ) -> Self {
-        InputHook {
-            uid: HookUID::new(),
-            init,
-            on_callback_err,
-            event_hook,
-        }
-    }
-}
-
 #[derive(Default)]
 pub(crate) struct LineData {
-    inital_prompt: String,
     pub(crate) prompt: String,
     pub(crate) prompt_separator: &'static str,
     prompt_len: u16,
@@ -204,7 +240,6 @@ impl LineData {
         LineData {
             prompt_len: LineData::prompt_len(&prompt, prompt_separator),
             prompt_separator,
-            inital_prompt: prompt.clone(),
             prompt,
             comp_enabled: completion_enabled,
             ..Default::default()
@@ -255,9 +290,11 @@ impl Display for ParseErr {
 
 /// Communicates the state of an [`InputHook`]
 ///
-/// Marker to tell [`process_input_event`](LineReader::process_input_event) to keep the [`InputEventHook`]
-/// active (`Continue`), or to drop it and run [`return_to_initial_state`](LineReader::return_to_initial_state)
-/// (`Release`).
+/// Marker to tell [`process_input_event`] to keep the [`InputEventHook`] active (`Continue`), or to drop
+/// it and run [`return_to_initial_state`] (`Release`).
+///
+/// [`process_input_event`]: LineReader::process_input_event
+/// [`return_to_initial_state`]: LineReader::return_to_initial_state
 pub enum HookControl {
     Continue,
     Release,
@@ -265,9 +302,9 @@ pub enum HookControl {
 
 /// Details ouput information for custom event processing.
 ///
-/// `HookedEvent` is the return type of [`InputEventHook`]. Contains both the instructions for the read eval print loop
-/// and the new state of [`InputEventHook`]. All `HookedEvent` constructors can not fail. They are always wrapped in `Ok`
-/// to reduce boilerplate
+/// `HookedEvent` is the return type of [`InputEventHook`]. Contains both the instructions for the read eval
+/// print loop and the new state of [`InputEventHook`]. All `HookedEvent` constructors can not fail. They are
+/// always wrapped in `Ok` to reduce boilerplate
 pub struct HookedEvent<Ctx> {
     event: EventLoop<Ctx>,
     new_state: HookControl,
@@ -305,12 +342,14 @@ impl<Ctx> HookedEvent<Ctx> {
 ///
 /// `EventLoop` enum acts as a control router for how your read eval print loop should react to input events.
 /// It provides mutable access back to your `Ctx` both synchronously and asynchronously. If your callback
-/// can error the [`conditionally_remove_hook`](LineReader::conditionally_remove_hook) method can restore
-/// the intial state of the `LineReader` as well as remove the queued input hook that was responsible for
-/// spawning the callback that resulted in an error.  
+/// can error the [`conditionally_remove_hook`] method can restore the intial state of the `LineReader` as
+/// well as remove the queued input hook that was responsible for spawning the callback that resulted in an
+/// error.  
 ///
-/// `TryProcessInput` uses [`shellwords::split`](https://docs.rs/shell-words/latest/shell_words/fn.split.html)
-/// to parse user input into common shell tokens.
+/// `TryProcessInput` uses [`shellwords::split`] to parse user input into common shell tokens.
+///
+/// [`conditionally_remove_hook`]: LineReader::conditionally_remove_hook
+/// [`shellwords::split`]: <https://docs.rs/shell-words/latest/shell_words/fn.split.html>
 pub enum EventLoop<Ctx> {
     Continue,
     Break,
@@ -342,8 +381,10 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         }
     }
 
-    /// It is recommended to call this method at the top of your read eval print loop see: [`render`](Self::render)  
+    /// It is recommended to call this method at the top of your read eval print loop see: [`render`]
     /// This method will insure all user input events are disregarded when a command is being processed
+    ///
+    /// [`render`]: Self::render
     pub async fn clear_unwanted_inputs(
         &mut self,
         stream: &mut crossterm::event::EventStream,
@@ -359,18 +400,19 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         Ok(())
     }
 
-    /// Returns the state to display the initially set prompt and completion state
-    pub fn return_to_initial_state(&mut self) {
-        if self.line.prompt != self.line.inital_prompt {
-            self.set_prompt(self.line.inital_prompt.clone());
-        }
-        self.enable_completion();
+    /// Run the reset state callback if present
+    #[inline]
+    fn try_run_reset_callback(&mut self, to: HookStates<Ctx, W>) -> io::Result<()> {
+        let Some(reset) = to.revert else {
+            return Ok(());
+        };
+        reset(self)
     }
 
     /// Makes sure the current `input_hook`'s initializer has been executed
     fn try_init_input_hook(&mut self) -> Option<io::Result<()>> {
         let callback = self.input_hooks.front_mut()?;
-        let init = callback.init.take()?;
+        let init = callback.init_revert.init.take()?;
         Some(init(self))
     }
 
@@ -394,18 +436,22 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///     }
     /// },
     /// ```
-    pub fn conditionally_remove_hook(&mut self, err: &InputHookErr) -> Option<Box<Callback<Ctx>>> {
+    pub fn conditionally_remove_hook(
+        &mut self,
+        err: &InputHookErr,
+    ) -> io::Result<Option<Box<Callback<Ctx>>>> {
         if self
             .next_input_hook()
             .is_some_and(|hook| hook.uid == err.uid)
         {
-            self.return_to_initial_state();
-            return self
+            let hook = self
                 .pop_input_hook()
-                .expect("`next_input_hook` & `pop_input_hook` both look at first queued hook")
-                .on_callback_err;
+                .expect("`next_input_hook` & `pop_input_hook` both look at first queued hook");
+            return self
+                .try_run_reset_callback(hook.init_revert)
+                .map(|_| hook.on_callback_err);
         }
-        None
+        Ok(None)
     }
 
     /// Pops the first queued `input_hook`
@@ -452,7 +498,9 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     }
 
     /// Sets the currently displayed prompt, prompt will revert back to initial state if an [`InputHook`] is
-    /// [`Released`](HookControl)
+    /// [`Released`]
+    ///
+    /// [`Released`]: HookControl
     pub fn set_prompt(&mut self, prompt: String) {
         self.line.prompt_len = LineData::prompt_len(&prompt, self.line.prompt_separator);
         self.line.prompt = prompt;
@@ -645,8 +693,11 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.change_line(new_line)
     }
 
-    /// If a [custom quit command](crate::LineReaderBuilder::with_custom_quit_command) is set this will tell the
-    /// read eval print loop to process the set command otherwise will return `EventLoop::Break`  
+    /// If a [custom quit command] is set this will tell the read eval print loop to process the set command
+    /// otherwise will return [`EventLoop::Break`]  
+    ///
+    /// [custom quit command]: crate::LineReaderBuilder::with_custom_quit_command
+    /// [`EventLoop::Break`]: crate::line::EventLoop
     pub fn process_close_signal(&mut self) -> io::Result<EventLoop<Ctx>> {
         self.clear_line()?;
         self.term.queue(cursor::Hide)?;
@@ -660,10 +711,11 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// The main control flow for awaited events from a `crossterm::event::EventStream`. Works well as its
     /// own branch in a `tokio::select!`.
     ///
-    /// Example read eval print loop assuming we have a `Ctx`, `command_context`,  that implements [`Executor`](crate::Executor)
+    /// Example read eval print loop assuming we have a `Ctx`, `command_context`,  that implements
+    /// [`Executor`]
     ///
-    /// See: [`process_callback!`](crate::process_callback), for reducing boilerplate for callbacks if you plan to use
-    /// the tracing crate for error logging
+    /// See: [`process_callback!`], for reducing boilerplate for callbacks if you plan to use the tracing
+    /// crate for error logging
     ///
     /// ```ignore
     /// let mut reader = crossterm::event::EventStream::new();
@@ -711,6 +763,9 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///     }
     /// }
     /// ```
+    ///
+    /// [`Executor`]: crate::executor::Executor
+    /// [`process_callback!`]: crate::process_callback
     pub fn process_input_event(&mut self, event: Event) -> io::Result<EventLoop<Ctx>> {
         execute!(self.term, BeginSynchronizedUpdate)?;
 
@@ -721,11 +776,11 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             }) = event
             {
                 let hook = self.pop_input_hook().expect("outer if");
-                debug_assert!(hook.init.is_none());
+                debug_assert!(hook.init_revert.init.is_none());
                 let hook_output = (hook.event_hook)(self, event)?;
                 match hook_output.new_state {
                     HookControl::Continue => self.input_hooks.push_front(hook),
-                    HookControl::Release => self.return_to_initial_state(),
+                    HookControl::Release => self.try_run_reset_callback(hook.init_revert)?,
                 }
                 return Ok(hook_output.event);
             }

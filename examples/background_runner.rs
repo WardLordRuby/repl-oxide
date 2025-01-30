@@ -43,10 +43,7 @@ impl Executor<Stdout> for CommandContext {
             Ok(command) => match command {
                 Command::Quit => Ok(CommandHandle::Exit),
             },
-            Err(err) => {
-                err.print()?;
-                Ok(CommandHandle::Processed)
-            }
+            Err(err) => err.print().map(|_| CommandHandle::Processed),
         }
     }
 }
@@ -58,18 +55,15 @@ enum Message {
     Info(String),
 }
 
-// We must impl Display for our `Message` type so the repl knows how to display the text
+// We must impl `Display` for our `Message` type so the repl knows how to display the text
 // Note the repl loop will take care of appending a new line character
 impl Display for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}",
-            match self {
-                Message::Info(msg) => format!("{GREEN}{msg}{WHITE}"),
-                Message::Err(msg) => format!("{RED}{msg}{WHITE}"),
-            }
-        )
+        let (line_color, msg): (&str, &str) = match self {
+            Message::Info(msg) => (GREEN, msg),
+            Message::Err(msg) => (RED, msg),
+        };
+        write!(f, "{line_color}{msg}{WHITE}")
     }
 }
 
