@@ -36,7 +36,9 @@ macro_rules! process_callback {
 /// Convenience macro for the generalized process of handling a streamed [`Event`]
 ///
 /// **Required Feature** = "macros"  
-/// The macros feature flag is included in both "runner" and "spawner" feature flags
+/// The macros feature flag is included in both "runner" and "spawner" feature flags.
+///
+/// This macro requries you to implement [`Executor`] on your `ctx`.
 ///
 /// Internally uses the [`process_callback`] macro that relies on tracing's [`error!`] to log any errors.
 ///
@@ -44,6 +46,7 @@ macro_rules! process_callback {
 /// run eval process loop. Requiring the outer scope of to have the same signature, and be called from
 /// within a loop.
 ///
+/// [`Executor`]: crate::executor::Executor
 /// [`Event`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html>
 /// [`error!`]: <https://docs.rs/tracing/latest/tracing/macro.error.html>
 #[macro_export]
@@ -60,11 +63,11 @@ macro_rules! general_event_process {
             }
             $crate::EventLoop::TryProcessInput(Ok(user_tokens)) => {
                 match $ctx.try_execute_command(user_tokens).await? {
-                    $crate::CommandHandle::Processed => (),
-                    $crate::CommandHandle::InsertHook(input_hook) => {
+                    $crate::executor::CommandHandle::Processed => (),
+                    $crate::executor::CommandHandle::InsertHook(input_hook) => {
                         $handle.register_input_hook(input_hook)
                     }
-                    $crate::CommandHandle::Exit => break,
+                    $crate::executor::CommandHandle::Exit => break,
                 }
             }
             $crate::EventLoop::TryProcessInput(Err(mismatched_quotes)) => {

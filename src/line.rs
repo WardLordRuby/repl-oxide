@@ -397,11 +397,19 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             return Ok(());
         }
 
-        let _ = timeout(Duration::from_millis(10), async {
-            while stream.fuse().next().await.is_some() {}
+        let Ok(res) = timeout(Duration::from_millis(10), async {
+            while let Some(event_res) = stream.fuse().next().await {
+                if let Event::Resize(x, y) = event_res? {
+                    self.term_size = (x, y)
+                }
+            }
+            Ok(())
         })
-        .await;
-        Ok(())
+        .await
+        else {
+            return Ok(());
+        };
+        res
     }
 
     /// Run the reset state callback if present

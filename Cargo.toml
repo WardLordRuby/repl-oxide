@@ -36,3 +36,8 @@ required-features = ["runner"]
 name = "spawner"
 path = "examples/spawner.rs"
 required-features = ["spawner"]
+
+[[example]]
+name = "basic-custom"
+path = "examples/basic_custom.rs"
+required-features = ["macros"]

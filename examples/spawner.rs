@@ -14,7 +14,8 @@ use tokio::{
 
 use repl_oxide::{
     ansi_code::{GREEN, RED, WHITE},
-    format_for_clap, repl_builder, CommandHandle, Executor,
+    executor::*,
+    repl_builder,
 };
 
 #[derive(Parser, Debug)]
@@ -86,11 +87,10 @@ async fn check_for_update() -> Result<(), &'static str> {
 #[tokio::main]
 async fn main() -> io::Result<()> {
     // Spawn repl on the current runtime
-    let (repl_task, message_sender): (tokio::task::JoinHandle<io::Result<()>>, Sender<Message>) =
-        repl_builder(io::stdout())
-            .build()
-            .expect("input writer accepts crossterm commands")
-            .spawn(CommandContext);
+    let (repl_task, message_sender) = repl_builder(io::stdout())
+        .build()
+        .expect("input writer accepts crossterm commands")
+        .spawn(CommandContext);
 
     // Spawn example background printer
     let timer_loop = print_timer(message_sender.clone());

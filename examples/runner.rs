@@ -6,7 +6,7 @@ use std::io::{self, Stdout};
 use clap::{CommandFactory, Parser};
 use tokio::time::{sleep, Duration};
 
-use repl_oxide::{format_for_clap, repl_builder, CommandHandle, Executor};
+use repl_oxide::{executor::*, repl_builder};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -69,9 +69,7 @@ impl Executor<Stdout> for CommandContext {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    Command::command()
-        .print_help()
-        .expect("Failed to print help");
+    Command::command().print_help()?;
 
     let mut command_ctx = CommandContext::default();
     let mut repl = repl_builder(io::stdout())
