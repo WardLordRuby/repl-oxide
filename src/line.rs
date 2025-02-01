@@ -46,6 +46,9 @@ pub type AsyncCallback<Ctx> = dyn for<'a> FnOnce(
 const DEFAULT_SEPARATOR: &str = "> ";
 const DEFAULT_PROMPT: &str = ">";
 
+/// This must be manually changed if either `DEFAULT_PROMPT` or `DEFAULT_SEPARATOR` are changed
+const DEFAULT_PROMPT_LEN: u16 = 3;
+
 static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
 
 /// Holds all context for REPL events
@@ -253,6 +256,11 @@ impl LineData {
         }
     }
 
+    #[inline]
+    fn update_prompt_len(&mut self) {
+        self.prompt_len = Self::prompt_len(&self.prompt, self.prompt_separator)
+    }
+
     fn prompt_len(prompt: &str, separator: &str) -> u16 {
         strip_ansi(prompt).chars().count() as u16 + strip_ansi(separator).chars().count() as u16
     }
@@ -439,7 +447,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///
     /// Eg:
     /// ```ignore
-    /// Ok(EventLoop::AsyncCallback(callback)) => {
+    /// EventLoop::AsyncCallback(callback) => {
     ///     if let Err(err) = callback(&mut command_context).await {
     ///         eprintln!("{err}");
     ///         if let Some(on_err_callback) = line_handle.conditionally_remove_hook(&err) {
@@ -509,13 +517,36 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.line.comp_enabled = false
     }
 
-    /// Sets the currently displayed prompt, prompt will revert back to initial state if an [`InputHook`] is
-    /// [`Released`]
-    ///
-    /// [`Released`]: HookControl
+    /// Sets the currently displayed prompt
     pub fn set_prompt(&mut self, prompt: String) {
-        self.line.prompt_len = LineData::prompt_len(&prompt, self.line.prompt_separator);
         self.line.prompt = prompt;
+        self.line.update_prompt_len();
+    }
+
+    /// Sets the currently displayed prompt separator
+    pub fn set_prompt_separator(&mut self, prompt_separator: &'static str) {
+        self.line.prompt_separator = prompt_separator;
+        self.line.update_prompt_len();
+    }
+
+    /// Sets the currently displayed prompt and prompt separator
+    pub fn set_prompt_and_separator(&mut self, prompt: String, prompt_separator: &'static str) {
+        self.line.prompt = prompt;
+        self.line.prompt_separator = prompt_separator;
+        self.line.update_prompt_len();
+    }
+
+    /// Sets the currently displayed prompt to the library supplied default
+    pub fn set_default_prompt(&mut self) {
+        self.line.prompt = DEFAULT_PROMPT.to_string();
+        self.line.update_prompt_len();
+    }
+
+    /// Sets the currently displayed prompt and prompt separator to the library supplied default
+    pub fn set_default_prompt_and_separator(&mut self) {
+        self.line.prompt = DEFAULT_PROMPT.to_string();
+        self.line.prompt_separator = DEFAULT_SEPARATOR;
+        self.line.prompt_len = DEFAULT_PROMPT_LEN;
     }
 
     /// Returns a reference to the current user input
@@ -731,9 +762,8 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///
     /// ```ignore
     /// let mut reader = crossterm::event::EventStream::new();
-    /// let mut line_handle = LineReaderBuilder::new()
+    /// let mut line_handle = repl_builder()
     ///     .terminal(std::io::stdout())
-    ///     .terminal_size(crossterm::terminal::size()?)
     ///     .build()
     ///     .expect("all required inputs are provided & terminal accepts crossterm commands");
     ///

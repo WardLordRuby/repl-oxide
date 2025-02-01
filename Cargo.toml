@@ -41,3 +41,7 @@ required-features = ["spawner"]
 name = "basic-custom"
 path = "examples/basic_custom.rs"
 required-features = ["macros"]
+
+[[example]]
+name = "advanced-control"
+path = "examples/advanced_control.rs"

@@ -10,8 +10,7 @@ use std::{
 #[inline]
 pub fn format_for_clap(
     tokens: Vec<String>,
-) -> std::iter::Chain<std::iter::Once<std::string::String>, std::vec::IntoIter<std::string::String>>
-{
+) -> std::iter::Chain<std::iter::Once<String>, std::vec::IntoIter<String>> {
     std::iter::once(String::new()).chain(tokens)
 }
 
@@ -52,7 +51,7 @@ pub enum CommandHandle<Ctx, W: Write> {
 ///
 /// Then within your read eval print loop requires some boilerplate to match against the returned [`CommandHandle`]
 /// ```ignore
-/// Ok(EventLoop::TryProcessInput(Ok(user_tokens))) => {
+/// EventLoop::TryProcessInput(Ok(user_tokens)) => {
 ///     match command_context.try_execute_command(user_tokens).await {
 ///         CommandHandle::Processed => (),
 ///         CommandHandle::InsertHook(input_hook) => line_reader.register_input_hook(input_hook),
@@ -65,7 +64,7 @@ pub enum CommandHandle<Ctx, W: Write> {
 /// [`spawn`]: crate::line::LineReader::spawn
 /// [`try_parse_from`]: <https://docs.rs/clap/latest/clap/trait.Parser.html#method.try_parse_from>
 /// [`clap_derive::Parser`]: <https://docs.rs/clap/latest/clap/trait.Parser.html>
-pub trait Executor<W: Write + Send>: std::marker::Sized + Send {
+pub trait Executor<W: Write + Send>: Sized + Send {
     fn try_execute_command(
         &mut self,
         user_tokens: Vec<String>,
