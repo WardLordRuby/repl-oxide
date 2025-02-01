@@ -6,7 +6,10 @@ use std::io::{self, Stdout};
 use clap::{CommandFactory, Parser};
 use tokio::time::{sleep, Duration};
 
-use repl_oxide::{executor::*, repl_builder};
+use repl_oxide::{
+    executor::{format_for_clap, CommandHandle, Executor},
+    repl_builder,
+};
 
 #[derive(Parser, Debug)]
 #[command(

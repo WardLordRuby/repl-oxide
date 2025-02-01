@@ -14,7 +14,7 @@ use tokio::{
 
 use repl_oxide::{
     ansi_code::{GREEN, RED, WHITE},
-    executor::*,
+    executor::{format_for_clap, CommandHandle, Executor},
     repl_builder,
 };
 

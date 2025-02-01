@@ -9,8 +9,8 @@
 /// This macro internally uses the try operator on an `io::Result<()>`. Requiring the outer scope of to also
 /// have the same signature.
 ///
-/// [`AsyncCallback`]: crate::line::AsyncCallback
-/// [`Callback`]: crate::line::Callback
+/// [`AsyncCallback`]: crate::definitions::callback::AsyncCallback
+/// [`Callback`]: crate::definitions::callback::Callback
 /// [`conditionally_remove_hook`]: crate::line::LineReader::conditionally_remove_hook
 /// [`error!`]: <https://docs.rs/tracing/latest/tracing/macro.error.html>
 #[macro_export]

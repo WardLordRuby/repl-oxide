@@ -1,5 +1,5 @@
-// Example usage demonstrating advanced customization features and callback types
-/*                      cargo r --example advanced-control                     */
+// Example usage demonstrating the use of the available callback types
+/*         cargo r --example callbacks --features="runner"          */
 
 use std::io::{self, Stdout};
 
@@ -7,16 +7,15 @@ use clap::Parser;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 
 use repl_oxide::{
-    ansi_code::{RED, WHITE},
-    executor::*,
-    repl_builder, EventLoop, HookControl, HookedEvent, InputEventHook, InputHook, ModLineState,
-    StreamExt,
+    callback::{InputEventHook, ModLineState},
+    executor::{format_for_clap, CommandHandle, Executor},
+    repl_builder, EventLoop, HookControl, HookedEvent, InputHook,
 };
 
 #[derive(Parser, Debug)]
 #[command(
     name = "Example App",
-    about = "Example app demonstrating repl-oxide's advanced customization features and callback types"
+    about = "Example app demonstrating repl-oxide's callback types"
 )]
 enum Command {
     /// Exit the command line REPL
@@ -90,52 +89,13 @@ impl Executor<Stdout> for CommandContext {
     }
 }
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 async fn main() -> io::Result<()> {
-    // Gain access to all terminal events
-    let mut event_stream = crossterm::event::EventStream::new();
-
-    // Create our type that implements `Executor`
-    let mut command_ctx = CommandContext;
-
-    // Build a `LineReader` with a custom quit command (quit), to handle the repl state
-    let mut repl = repl_builder(io::stdout())
+    // Build and run a new `LineReader` with a custom quit command (quit)
+    repl_builder(io::stdout())
         .with_custom_quit_command("quit")
         .build()
-        .expect("input writer accepts crossterm commands");
-
-    loop {
-        // Disregard key inputs while user commands are being processed
-        repl.clear_unwanted_inputs(&mut event_stream).await?;
-
-        // Render the lines current state
-        repl.render()?;
-
-        // Await an Event from the stream
-        if let Some(event_result) = event_stream.next().await {
-            match repl.process_input_event(event_result?)? {
-                EventLoop::Continue => (),
-                EventLoop::Break => break,
-                EventLoop::Callback(_) | EventLoop::AsyncCallback(_) => {
-                    unreachable!(
-                        "our only input hook within `quit` never outputs any `Callback` or `AsyncCallback`"
-                    )
-                }
-                EventLoop::TryProcessInput(Ok(user_tokens)) => {
-                    match command_ctx.try_execute_command(user_tokens).await? {
-                        CommandHandle::Processed => (),
-                        CommandHandle::InsertHook(input_hook) => {
-                            repl.register_input_hook(input_hook)
-                        }
-                        CommandHandle::Exit => break,
-                    }
-                }
-                EventLoop::TryProcessInput(Err(mismatched_quotes)) => {
-                    eprintln!("{RED}{mismatched_quotes}{WHITE}")
-                }
-            }
-        }
-    }
-
-    Ok(())
+        .expect("input writer accepts crossterm commands")
+        .run(&mut CommandContext)
+        .await
 }

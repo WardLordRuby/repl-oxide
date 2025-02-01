@@ -1,5 +1,6 @@
 use crate::{
     ansi_code::{RED, WHITE},
+    callback::{AsyncCallback, Callback, InputEventHook, ModLineState},
     completion::{Completion, Direction},
 };
 use constcat::concat;
@@ -16,9 +17,7 @@ use std::{
     borrow::Cow,
     collections::VecDeque,
     fmt::{Debug, Display},
-    future::Future,
     io::{self, Write},
-    pin::Pin,
     sync::atomic::{AtomicUsize, Ordering},
 };
 use strip_ansi::strip_ansi;
@@ -34,20 +33,11 @@ use tokio_stream::StreamExt;
 // UNIX BUGS
 // 1. Renders print help incorrectly
 
-pub type InputEventHook<Ctx, W> =
-    dyn Fn(&mut LineReader<Ctx, W>, Event) -> io::Result<HookedEvent<Ctx>> + Send;
-pub type ModLineState<Ctx, W> = dyn FnOnce(&mut LineReader<Ctx, W>) -> io::Result<()> + Send;
-pub type Callback<Ctx> = dyn Fn(&mut Ctx) -> Result<(), InputHookErr> + Send;
-pub type AsyncCallback<Ctx> = dyn for<'a> FnOnce(
-        &'a mut Ctx,
-    ) -> Pin<Box<dyn Future<Output = Result<(), InputHookErr>> + Send + 'a>>
-    + Send;
-
 const DEFAULT_SEPARATOR: &str = "> ";
 const DEFAULT_PROMPT: &str = ">";
 
-/// This must be manually changed if either `DEFAULT_PROMPT` or `DEFAULT_SEPARATOR` are changed
-const DEFAULT_PROMPT_LEN: u16 = 3;
+// .len() here is only ok since we use all chars that are 1 byte
+const DEFAULT_PROMPT_LEN: u16 = DEFAULT_PROMPT.len() as u16 + DEFAULT_SEPARATOR.len() as u16;
 
 static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
 
@@ -511,6 +501,10 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.line.comp_enabled = true
     }
 
+    // MARK: TODO
+    // break out styleization from the completion flag, create getter/setter
+    // get quote errors working when completion is not enabled but style is
+
     /// Disables completion
     #[inline]
     pub fn disable_completion(&mut self) {
@@ -523,13 +517,15 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.line.update_prompt_len();
     }
 
-    /// Sets the currently displayed prompt separator
+    /// Sets the currently displayed prompt separator  
+    /// /// Generally you always want the prompt separator to end with a space
     pub fn set_prompt_separator(&mut self, prompt_separator: &'static str) {
         self.line.prompt_separator = prompt_separator;
         self.line.update_prompt_len();
     }
 
-    /// Sets the currently displayed prompt and prompt separator
+    /// Sets the currently displayed prompt and prompt separator  
+    /// /// Generally you always want the prompt separator to end with a space
     pub fn set_prompt_and_separator(&mut self, prompt: String, prompt_separator: &'static str) {
         self.line.prompt = prompt;
         self.line.prompt_separator = prompt_separator;

@@ -43,5 +43,6 @@ path = "examples/basic_custom.rs"
 required-features = ["macros"]
 
 [[example]]
-name = "advanced-control"
-path = "examples/advanced_control.rs"
+name = "callbacks"
+path = "examples/callbacks.rs"
+required-features = ["runner"]

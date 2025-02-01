@@ -72,7 +72,8 @@ impl<W: Write> LineReaderBuilder<'_, W> {
         self
     }
 
-    /// Supply a custom prompt separator to override the default prompt separator "> ".
+    /// Supply a custom prompt separator to override the default prompt separator "> ".  
+    /// Generally you always want the prompt separator to end with a space
     pub fn with_custom_prompt_separator(mut self, separator: &'static str) -> Self {
         self.prompt_end = Some(separator);
         self
