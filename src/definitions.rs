@@ -6,7 +6,7 @@ pub mod ansi_code {
     pub const BLUE: &str = "\x1b[38;5;38m";
     pub const MAGENTA: &str = "\x1b[35m";
     pub const GREY: &str = "\x1b[38;5;238m";
-    pub const WHITE: &str = "\x1b[0m";
+    pub const RESET: &str = "\x1b[0m";
 }
 
 /// Collection of callbacks that allow for deeper library control

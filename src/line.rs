@@ -1,5 +1,5 @@
 use crate::{
-    ansi_code::{RED, WHITE},
+    ansi_code::{RED, RESET},
     callback::{AsyncCallback, Callback, InputEventHook, ModLineState},
     completion::{Completion, Direction},
 };
@@ -33,11 +33,14 @@ use tokio_stream::StreamExt;
 // UNIX BUGS
 // 1. Renders print help incorrectly
 
-const DEFAULT_SEPARATOR: &str = "> ";
+const DEFAULT_SEPARATOR: &str = ">";
 const DEFAULT_PROMPT: &str = ">";
 
 // .len() here is only ok since we use all chars that are 1 byte
-const DEFAULT_PROMPT_LEN: u16 = DEFAULT_PROMPT.len() as u16 + DEFAULT_SEPARATOR.len() as u16;
+// The '+ 1' is accounting for the space character located in our impl `Display` for `Self`
+const DEFAULT_PROMPT_LEN: u16 = DEFAULT_PROMPT.len() as u16 + DEFAULT_SEPARATOR.len() as u16 + 1;
+
+const NEW_LINE: &str = "\n";
 
 static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
 
@@ -221,26 +224,29 @@ impl Display for InputHookErr {
 #[derive(Default)]
 pub(crate) struct LineData {
     pub(crate) prompt: String,
-    pub(crate) prompt_separator: &'static str,
+    pub(crate) prompt_separator: String,
     prompt_len: u16,
     pub(crate) input: String,
     len: u16,
     pub(crate) comp_enabled: bool,
+    pub(crate) style_enabled: bool,
     pub(crate) err: bool,
 }
 
 impl LineData {
     pub(crate) fn new(
         prompt: Option<String>,
-        prompt_separator: Option<&'static str>,
+        prompt_separator: Option<String>,
+        style_enabled: bool,
         completion_enabled: bool,
     ) -> Self {
         let prompt = prompt.unwrap_or_else(|| String::from(DEFAULT_PROMPT));
-        let prompt_separator = prompt_separator.unwrap_or(DEFAULT_SEPARATOR);
+        let prompt_separator = prompt_separator.unwrap_or_else(|| String::from(DEFAULT_SEPARATOR));
         LineData {
-            prompt_len: LineData::prompt_len(&prompt, prompt_separator),
+            prompt_len: LineData::prompt_len(&prompt, &prompt_separator),
             prompt_separator,
             prompt,
+            style_enabled,
             comp_enabled: completion_enabled,
             ..Default::default()
         }
@@ -248,11 +254,12 @@ impl LineData {
 
     #[inline]
     fn update_prompt_len(&mut self) {
-        self.prompt_len = Self::prompt_len(&self.prompt, self.prompt_separator)
+        self.prompt_len = Self::prompt_len(&self.prompt, &self.prompt_separator)
     }
 
     fn prompt_len(prompt: &str, separator: &str) -> u16 {
-        strip_ansi(prompt).chars().count() as u16 + strip_ansi(separator).chars().count() as u16
+        // The '+ 1' is accounting for the space character located in our impl `Display` for `Self`
+        strip_ansi(prompt).chars().count() as u16 + strip_ansi(separator).chars().count() as u16 + 1
     }
 
     #[inline]
@@ -335,6 +342,16 @@ impl<Ctx> HookedEvent<Ctx> {
     pub fn release_hook() -> io::Result<Self> {
         Ok(Self {
             event: EventLoop::Continue,
+            new_state: HookControl::Release,
+        })
+    }
+
+    /// Will tell the read eval print loop to break and drop the current [`InputEventHook`].  
+    /// Constructor can not fail, output is wrapped in `Ok` to reduce boilerplate
+    #[inline]
+    pub fn break_repl() -> io::Result<Self> {
+        Ok(Self {
+            event: EventLoop::Break,
             new_state: HookControl::Release,
         })
     }
@@ -481,7 +498,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         execute!(self.term, BeginSynchronizedUpdate)?;
         self.term.queue(cursor::Hide)?;
         self.move_to_beginning(self.line_len())?;
-        self.term.queue(Print(msg))?.queue(Print("\n"))?;
+        self.term.queue(Print(msg))?.queue(Print(NEW_LINE))?;
         self.cursor_at_start = false;
         Ok(())
     }
@@ -492,7 +509,9 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.line.comp_enabled
     }
 
-    /// Enables completion as long as the set [`CommandScheme`](crate::completion::CommandScheme) is not empty
+    /// Enables completion as long as the set [`CommandScheme`] is not empty
+    ///
+    /// [`CommandScheme`]: crate::completion::CommandScheme
     #[inline]
     pub fn enable_completion(&mut self) {
         if self.completion.is_empty() {
@@ -501,47 +520,59 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.line.comp_enabled = true
     }
 
-    // MARK: TODO
-    // break out styleization from the completion flag, create getter/setter
-    // get quote errors working when completion is not enabled but style is
-
     /// Disables completion
     #[inline]
     pub fn disable_completion(&mut self) {
         self.line.comp_enabled = false
     }
 
+    /// Returns if line stylization is currently enabled
+    #[inline]
+    pub fn line_stylization_enabled(&self) -> bool {
+        self.line.style_enabled
+    }
+
+    /// Enables line stylization
+    #[inline]
+    pub fn enable_line_stylization(&mut self) {
+        self.line.style_enabled = true
+    }
+
+    /// Disables line stylization
+    #[inline]
+    pub fn disable_line_stylization(&mut self) {
+        self.line.style_enabled = false
+    }
+
     /// Sets the currently displayed prompt
-    pub fn set_prompt(&mut self, prompt: String) {
-        self.line.prompt = prompt;
+    pub fn set_prompt(&mut self, prompt: &str) {
+        self.line.prompt = String::from(prompt.trim());
         self.line.update_prompt_len();
     }
 
     /// Sets the currently displayed prompt separator  
-    /// /// Generally you always want the prompt separator to end with a space
-    pub fn set_prompt_separator(&mut self, prompt_separator: &'static str) {
-        self.line.prompt_separator = prompt_separator;
+    pub fn set_prompt_separator(&mut self, prompt_separator: &str) {
+        self.line.prompt_separator = String::from(prompt_separator.trim());
         self.line.update_prompt_len();
     }
 
     /// Sets the currently displayed prompt and prompt separator  
-    /// /// Generally you always want the prompt separator to end with a space
-    pub fn set_prompt_and_separator(&mut self, prompt: String, prompt_separator: &'static str) {
-        self.line.prompt = prompt;
-        self.line.prompt_separator = prompt_separator;
+    pub fn set_prompt_and_separator(&mut self, prompt: &str, prompt_separator: &str) {
+        self.line.prompt = String::from(prompt.trim());
+        self.line.prompt_separator = String::from(prompt_separator.trim());
         self.line.update_prompt_len();
     }
 
     /// Sets the currently displayed prompt to the library supplied default
     pub fn set_default_prompt(&mut self) {
-        self.line.prompt = DEFAULT_PROMPT.to_string();
+        self.line.prompt = String::from(DEFAULT_PROMPT);
         self.line.update_prompt_len();
     }
 
     /// Sets the currently displayed prompt and prompt separator to the library supplied default
     pub fn set_default_prompt_and_separator(&mut self) {
-        self.line.prompt = DEFAULT_PROMPT.to_string();
-        self.line.prompt_separator = DEFAULT_SEPARATOR;
+        self.line.prompt = String::from(DEFAULT_PROMPT);
+        self.line.prompt_separator = String::from(DEFAULT_SEPARATOR);
         self.line.prompt_len = DEFAULT_PROMPT_LEN;
     }
 
@@ -584,7 +615,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     fn move_to_end(&mut self, line_len: u16) -> io::Result<()> {
         let line_remaining_len = self.line_remainder(line_len);
         if line_remaining_len == 0 {
-            self.term.queue(Print("\n"))?;
+            self.term.queue(Print(NEW_LINE))?;
         }
         self.term.queue(cursor::MoveToColumn(line_remaining_len))?;
         self.cursor_at_start = false;
@@ -644,14 +675,18 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
     /// Writes the current line to the terminal and then returns [`clear_line`](Self::clear_line)
     pub fn new_line(&mut self) -> io::Result<String> {
-        self.term.queue(Print("\n"))?;
+        self.term.queue(Print(NEW_LINE))?;
         self.clear_line()
     }
 
     /// Appends "^C" in red to the current line and writes it to the terminal and then returns
     /// [`clear_line`](Self::clear_line)
     pub fn ctrl_c_line(&mut self) -> io::Result<String> {
-        self.term.queue(Print(concat!(RED, "^C", WHITE, "\n")))?;
+        self.term.queue(Print(if self.line.style_enabled {
+            concat!(RED, "^C", RESET, NEW_LINE)
+        } else {
+            concat!("^C", NEW_LINE)
+        }))?;
         self.clear_line()
     }
 

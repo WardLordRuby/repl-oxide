@@ -17,7 +17,8 @@ pub struct LineReaderBuilder<'a, W: Write> {
     term: W,
     term_size: Option<(u16, u16)>,
     prompt: Option<String>,
-    prompt_end: Option<&'static str>,
+    prompt_end: Option<String>,
+    style_enabled: bool,
 }
 
 /// Builder for [`LineReader`]
@@ -31,6 +32,7 @@ pub fn repl_builder<W: Write>(terminal: W) -> LineReaderBuilder<'static, W> {
         term_size: None,
         prompt: None,
         prompt_end: None,
+        style_enabled: true,
     }
 }
 
@@ -66,16 +68,22 @@ impl<W: Write> LineReaderBuilder<'_, W> {
         self
     }
 
+    /// Disables line stylization
+    pub fn without_line_stylization(mut self) -> Self {
+        self.style_enabled = false;
+        self
+    }
+
     /// Supply a default prompt the line should display, if none is supplied '>' is used.
-    pub fn with_prompt(mut self, prompt: String) -> Self {
-        self.prompt = Some(prompt);
+    pub fn with_prompt(mut self, prompt: &str) -> Self {
+        self.prompt = Some(String::from(prompt.trim()));
         self
     }
 
     /// Supply a custom prompt separator to override the default prompt separator "> ".  
     /// Generally you always want the prompt separator to end with a space
-    pub fn with_custom_prompt_separator(mut self, separator: &'static str) -> Self {
-        self.prompt_end = Some(separator);
+    pub fn with_custom_prompt_separator(mut self, separator: &str) -> Self {
+        self.prompt_end = Some(String::from(separator.trim()));
         self
     }
 
@@ -116,7 +124,12 @@ impl<W: Write> LineReaderBuilder<'_, W> {
         self.term.queue(cursor::EnableBlinking)?;
 
         Ok(LineReader::new(
-            LineData::new(self.prompt, self.prompt_end, !completion.is_empty()),
+            LineData::new(
+                self.prompt,
+                self.prompt_end,
+                self.style_enabled,
+                !completion.is_empty(),
+            ),
             self.term,
             term_size,
             custom_quit,

@@ -9,7 +9,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use repl_oxide::{
     callback::{InputEventHook, ModLineState},
     executor::{format_for_clap, CommandHandle, Executor},
-    repl_builder, EventLoop, HookControl, HookedEvent, InputHook,
+    repl_builder, HookedEvent, InputHook,
 };
 
 #[derive(Parser, Debug)]
@@ -30,12 +30,14 @@ struct CommandContext;
 fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {
     // Change the line state as soon as we return our new `InputHook`
     let init: Box<ModLineState<CommandContext, Stdout>> = Box::new(|handle| {
-        handle.set_prompt_and_separator("Are you sure? (y/n)".to_string(), ": ");
+        handle.disable_line_stylization();
+        handle.set_prompt_and_separator("Are you sure? (y/n)", ":");
         Ok(())
     });
 
     // Revert the line state if the user chooses not to quit
     let revert: Box<ModLineState<CommandContext, Stdout>> = Box::new(|handle| {
+        handle.enable_line_stylization();
         handle.set_default_prompt_and_separator();
         Ok(())
     });
@@ -59,7 +61,7 @@ fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {
                     code: KeyCode::Char('y'),
                     ..
                 },
-            ) => HookedEvent::new(EventLoop::Break, HookControl::Release),
+            ) => HookedEvent::break_repl(),
             _ => HookedEvent::release_hook(),
         });
 

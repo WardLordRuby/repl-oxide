@@ -859,7 +859,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             self.completion.curr_command().is_some_and_invalid(),
             self.completion.curr_arg().is_some_and_invalid(),
             self.completion.curr_value().is_some_and_invalid(),
-            self.open_quote().is_some(),
             self.check_value_err(self.curr_token())
         ));
     }
@@ -868,8 +867,11 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     pub fn update_completeion(&mut self) {
         let line_trim_start = self.line.input.trim_start();
         if line_trim_start.is_empty() {
-            self.default_recomendations();
-            self.completion.input.ending.token.clear();
+            if !self.completion.is_empty() {
+                self.default_recomendations();
+            }
+            self.line.err = false;
+            self.completion.input.ending = LineEnd::default();
             return;
         }
 
@@ -1181,7 +1183,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
     /// Changes the current user input to either `Next` or `Previous` suggestion depending on the given direction
     pub fn try_completion(&mut self, direction: Direction) -> io::Result<()> {
-        if self.completion.recomendations.is_empty() {
+        if !self.line.comp_enabled {
             return Ok(());
         }
 
@@ -1318,9 +1320,11 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.completion.recomendations.push(HELP_STR);
     }
 
-    /// Resets the state of the current suggestions
-    pub fn reset_completion(&mut self) {
+    /// Clears all state found by the completion module
+    pub(crate) fn reset_completion(&mut self) {
+        self.line.err = false;
         if self.completion.is_empty() {
+            self.completion.input.ending = LineEnd::default();
             return;
         }
         self.default_recomendations();

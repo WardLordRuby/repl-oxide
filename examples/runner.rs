@@ -41,7 +41,15 @@ struct CommandContext {
 impl CommandContext {
     async fn async_test() -> io::Result<OurCommandHandle> {
         println!("Performing async tasks");
-        sleep(Duration::from_secs(1)).await;
+        let t_1 = tokio::spawn(async {
+            sleep(Duration::from_secs(1)).await;
+            println!("Finished task 1")
+        });
+        let t_2 = tokio::spawn(async {
+            sleep(Duration::from_secs(2)).await;
+            println!("Finished task 2")
+        });
+        let _ = tokio::join!(t_1, t_2);
         Ok(CommandHandle::Processed)
     }
 

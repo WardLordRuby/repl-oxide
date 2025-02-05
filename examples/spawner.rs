@@ -13,7 +13,7 @@ use tokio::{
 };
 
 use repl_oxide::{
-    ansi_code::{GREEN, RED, WHITE},
+    ansi_code::{GREEN, RED, RESET},
     executor::{format_for_clap, CommandHandle, Executor},
     repl_builder,
 };
@@ -64,7 +64,7 @@ impl Display for Message {
             Message::Info(msg) => (GREEN, msg),
             Message::Err(msg) => (RED, msg),
         };
-        write!(f, "{line_color}{msg}{WHITE}")
+        write!(f, "{line_color}{msg}{RESET}")
     }
 }
 

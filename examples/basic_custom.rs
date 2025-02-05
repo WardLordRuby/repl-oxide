@@ -13,7 +13,7 @@ use tokio::{
 };
 
 use repl_oxide::{
-    ansi_code::{RED, WHITE},
+    ansi_code::{RED, RESET},
     executor::{format_for_clap, CommandHandle, Executor},
     general_event_process, repl_builder, StreamExt,
 };
@@ -59,7 +59,7 @@ struct ErrorMsg<T: Display>(T);
 // Note the repl loop will take care of appending a new line character
 impl<T: Display> Display for ErrorMsg<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{RED}{}{WHITE}", self.0)
+        write!(f, "{RED}{}{RESET}", self.0)
     }
 }
 

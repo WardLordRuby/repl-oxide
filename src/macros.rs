@@ -74,7 +74,7 @@ macro_rules! general_event_process {
                 eprintln!(
                     "{}{mismatched_quotes}{}",
                     $crate::ansi_code::RED,
-                    $crate::ansi_code::WHITE
+                    $crate::ansi_code::RESET
                 )
             }
         }
