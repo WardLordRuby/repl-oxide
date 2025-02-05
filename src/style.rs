@@ -58,7 +58,6 @@ impl FormatState {
     #[inline]
     fn open_quote(&mut self, quote: char, total_len: usize) {
         self.open_quote = Some((quote, self.white_space_start, total_len));
-        self.white_space_start += total_len;
     }
 
     #[inline]
@@ -109,20 +108,34 @@ fn stylize_input(input: &str) -> (String, bool) {
 
         let push_ws = |ctx: &mut FormatState| {
             ctx.push(&input[ctx.white_space_start..ctx.white_space_start + white_space_len]);
-            ctx.white_space_start += white_space_len;
         };
 
-        if let Some((quote, start, len)) = ctx.open_quote {
-            if token.ends_with(quote) {
-                ctx.close_quote(input, start, white_space_len + len + token.len());
-            } else {
-                ctx.add_quote_len(white_space_len + token.len());
-            }
-            ctx.white_space_start += white_space_len + token.len();
+        let advance_ws = |ctx: &mut FormatState| {
+            ctx.white_space_start += token.len() + white_space_len;
+        };
+
+        if let Some((ref mut quote, start, open_quote_len)) = ctx.open_quote {
+            match parse_quoted_token(token, Some(*quote)) {
+                Some(slice_data) if slice_data.open_quote.is_none() => {
+                    let token_len = slice_data
+                        .remainder
+                        .map_or(token.len(), |_| slice_data.contains_quote.len());
+                    ctx.close_quote(input, start, open_quote_len + white_space_len + token_len);
+                    if let Some(remainder) = slice_data.remainder {
+                        ctx.push(remainder);
+                    }
+                }
+                Some(slice_data) => {
+                    *quote = slice_data.open_quote.expect("this branch must be `Some`");
+                    ctx.add_quote_len(white_space_len + token.len());
+                }
+                None => ctx.add_quote_len(white_space_len + token.len()),
+            };
+            advance_ws(&mut ctx);
             continue;
         }
 
-        if let Some(slice_data) = parse_quoted_token(token) {
+        if let Some(slice_data) = parse_quoted_token(token, None) {
             if ctx.curr_color == TextColor::White {
                 if slice_data.starts_with_quote {
                     ctx.set_color(TextColor::Blue);
@@ -135,17 +148,16 @@ fn stylize_input(input: &str) -> (String, bool) {
                 let token_len = slice_data.remainder.map_or(token.len(), |rem| {
                     push_ws(&mut ctx);
                     ctx.push(slice_data.contains_quote);
-                    ctx.white_space_start += slice_data.contains_quote.len();
                     ctx.set_color(TextColor::White);
                     rem.len()
                 });
-                ctx.open_quote(quote, token_len + white_space_len);
+                ctx.open_quote(quote, white_space_len + token_len);
+                advance_ws(&mut ctx);
                 continue;
             }
 
             push_ws(&mut ctx);
             ctx.push(slice_data.contains_quote);
-            ctx.white_space_start += slice_data.contains_quote.len();
 
             if ctx.curr_color != TextColor::White {
                 ctx.set_color(TextColor::White);
@@ -161,11 +173,12 @@ fn stylize_input(input: &str) -> (String, bool) {
         }
 
         ctx.push(token);
-        ctx.white_space_start += token.len();
 
         if ctx.curr_color != TextColor::White {
             ctx.set_color(TextColor::White);
         }
+
+        advance_ws(&mut ctx);
     }
 
     if let Some((_, start, _)) = ctx.open_quote {
@@ -191,28 +204,36 @@ struct QuoteSlice<'a> {
 }
 
 /// Only returns `Some` if a quote is found
-fn parse_quoted_token(token: &str) -> Option<QuoteSlice> {
+fn parse_quoted_token(token: &str, mut open: Option<char>) -> Option<QuoteSlice> {
     let starts_with_quote = token.starts_with(QUOTES);
-    let mut quote_found = starts_with_quote;
-    let mut consecutive = starts_with_quote;
-    let mut open =
-        starts_with_quote.then(|| token.char_indices().next().expect("starts with quotes"));
-    let mut consecutive_closed = None;
+    let prev_open_token = open.is_some();
 
-    for (i, ch) in token.char_indices().skip(1) {
+    let mut quote_found = starts_with_quote;
+    let mut consecutive = open.is_some() || starts_with_quote;
+
+    let mut token_iter = token.char_indices();
+
+    if open.is_none() && starts_with_quote {
+        open = token_iter.next().map(|(_, quote)| quote);
+        debug_assert!(open.is_some());
+    }
+    let mut consecutive_closed_i = None;
+
+    for (i, ch) in token_iter {
         match open {
-            Some((_, quote)) => {
+            Some(quote) => {
                 if ch == quote {
                     open = None;
+                    quote_found = true;
                     if consecutive {
-                        consecutive_closed = Some((i, ch));
+                        consecutive_closed_i = Some(i);
                     }
                 }
             }
-            None => match consecutive_closed {
-                Some((j, _)) => {
+            None => match consecutive_closed_i {
+                Some(j) => {
                     consecutive = if QUOTES.iter().any(|&quote| ch == quote) {
-                        open = Some((i, ch));
+                        open = Some(ch);
                         consecutive && i == j + QUOTE_LEN
                     } else {
                         false
@@ -220,7 +241,7 @@ fn parse_quoted_token(token: &str) -> Option<QuoteSlice> {
                 }
                 None => {
                     if QUOTES.iter().any(|&quote| ch == quote) {
-                        open = Some((i, ch));
+                        open = Some(ch);
                         quote_found = true;
                     }
                 }
@@ -229,33 +250,26 @@ fn parse_quoted_token(token: &str) -> Option<QuoteSlice> {
     }
 
     quote_found.then(|| {
-        if !starts_with_quote || (consecutive && open.is_some()) {
+        if (!starts_with_quote && !prev_open_token)
+            || (consecutive && open.is_some())
+            || consecutive_closed_i.is_none()
+        {
             return QuoteSlice {
                 contains_quote: token,
-                open_quote: open.map(|(_, quote)| quote),
+                open_quote: open,
                 starts_with_quote,
                 remainder: None,
             };
         }
-        match consecutive_closed {
-            Some(closed_quote) => QuoteSlice {
-                contains_quote: &token[..=closed_quote.0],
-                open_quote: open.map(|(_, quote)| quote),
-                starts_with_quote,
-                remainder: token[closed_quote.0..]
-                    .char_indices()
-                    .nth(1)
-                    .map(|(i, _)| &token[closed_quote.0 + i..]),
-            },
-            None => {
-                debug_assert!(open.is_some());
-                QuoteSlice {
-                    contains_quote: token,
-                    open_quote: open.map(|(_, quote)| quote),
-                    starts_with_quote,
-                    remainder: None,
-                }
-            }
+        let closed_i = consecutive_closed_i.expect("early return");
+        QuoteSlice {
+            contains_quote: &token[..=closed_i],
+            open_quote: open,
+            starts_with_quote,
+            remainder: token[closed_i..]
+                .char_indices()
+                .nth(1)
+                .map(|(i, _)| &token[closed_i + i..]),
         }
     })
 }
