@@ -18,7 +18,7 @@ use repl_oxide::{
     general_event_process, repl_builder, StreamExt,
 };
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[command(
     name = "Example App",
     about = "Example app demonstrating repl-oxide's macros feature flag"

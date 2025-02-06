@@ -101,6 +101,7 @@ pub struct InputHook<Ctx, W: Write> {
     event_hook: Box<InputEventHook<Ctx, W>>,
 }
 
+/// Holds repl display state modifications on creation and drop of an [`InputHook`]
 pub struct HookStates<Ctx, W: Write> {
     init: Option<Box<ModLineState<Ctx, W>>>,
     revert: Option<Box<ModLineState<Ctx, W>>>,
@@ -582,6 +583,12 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         &self.line.input
     }
 
+    /// Returns a mutable reference to the current user input
+    #[inline]
+    pub fn input_mut(&mut self) -> &mut String {
+        &mut self.line.input
+    }
+
     /// Gets the number of lines wrapped
     #[inline]
     fn line_height(&self, line_len: u16) -> u16 {
@@ -793,10 +800,9 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///
     /// ```ignore
     /// let mut reader = crossterm::event::EventStream::new();
-    /// let mut line_handle = repl_builder()
-    ///     .terminal(std::io::stdout())
+    /// let mut line_handle = repl_builder(std::io::stdout())
     ///     .build()
-    ///     .expect("all required inputs are provided & terminal accepts crossterm commands");
+    ///     .expect("input writer accepts crossterm commands");
     ///
     /// loop {
     ///     line_handle.clear_unwanted_inputs(&mut reader).await?;
@@ -920,6 +926,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 self.new_line()?;
             }
             Event::Resize(x, y) => self.term_size = (x, y),
+            Event::Paste(new) => self.input_mut().push_str(&new),
             _ => {
                 self.uneventful = true;
                 execute!(self.term, EndSynchronizedUpdate)?;

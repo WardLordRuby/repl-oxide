@@ -25,6 +25,7 @@ tracing = { version = "0.1.41", default-features = false, features = ["attribute
 
 [dev-dependencies]
 clap = { version = "4.5.27", features = ["derive"] }
+rand = "0.9.0"
 tokio = { version = "1.43.0", features = ["rt-multi-thread", "macros"] }
 
 [[example]]
@@ -45,4 +46,9 @@ required-features = ["macros"]
 [[example]]
 name = "callbacks"
 path = "examples/callbacks.rs"
+required-features = ["runner"]
+
+[[example]]
+name = "completion"
+path = "examples/completion.rs"
 required-features = ["runner"]

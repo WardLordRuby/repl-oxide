@@ -11,7 +11,7 @@ use repl_oxide::{
     repl_builder,
 };
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[command(
     name = "Example App",
     about = "Example app showing repl-oxide's async and persistant state nature"

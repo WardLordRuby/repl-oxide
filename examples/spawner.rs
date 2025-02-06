@@ -18,7 +18,7 @@ use repl_oxide::{
     repl_builder,
 };
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[command(
     name = "Example App",
     about = "Example app demonstrating repl-oxide's spawner feature"

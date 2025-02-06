@@ -12,7 +12,7 @@ use repl_oxide::{
     repl_builder, HookedEvent, InputHook,
 };
 
-#[derive(Parser, Debug)]
+#[derive(Parser)]
 #[command(
     name = "Example App",
     about = "Example app demonstrating repl-oxide's callback types"
@@ -65,7 +65,7 @@ fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {
             _ => HookedEvent::release_hook(),
         });
 
-    // Since our `input_hook` does not return any `EventLoop::Callback` `EventLoop::AsyncCallback`
+    // Since our `input_hook` does not return any `EventLoop::Callback` or `EventLoop::AsyncCallback`
     // we can use `with_new_uid` here. If we wanted to modify the state of our `CommandContext` within
     // our `input_hook` we could use either callback type to do so. If said callback could error we would
     // have to ensure that the error has the same `UID` and the outer `InputHook`
@@ -76,7 +76,7 @@ fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {
     )))
 }
 
-// Implement `Executor` so we can use `try_execute_command`
+// Implement `Executor` so we can use `run`
 impl Executor<Stdout> for CommandContext {
     async fn try_execute_command(
         &mut self,
@@ -93,7 +93,9 @@ impl Executor<Stdout> for CommandContext {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    // Build and run a new `LineReader` with a custom quit command (quit)
+    // Build and run a new `LineReader` with a custom quit command "quit" (given string will be ran through
+    // `try_execute_command`) to be ran if the user tries to quit with 'ctrl + c' (when the line is empty)
+    // or 'ctrl + d'
     repl_builder(io::stdout())
         .with_custom_quit_command("quit")
         .build()

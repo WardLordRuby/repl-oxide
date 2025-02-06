@@ -38,7 +38,8 @@ pub fn repl_builder<W: Write>(terminal: W) -> LineReaderBuilder<'static, W> {
 
 impl<'a, W: Write> LineReaderBuilder<'a, W> {
     /// Supply a custom command to be executed when the user tries to quit with 'ctrl + c' when the current
-    /// line is empty. If none is supplied [`EventLoop::Break`] will be returned.
+    /// line is empty, or anytime 'ctrl + d' is entered. If none is supplied [`EventLoop::Break`] will be
+    /// returned.
     ///
     /// [`EventLoop::Break`]: crate::line::EventLoop
     pub fn with_custom_quit_command(mut self, quit_cmd: &'a str) -> Self {

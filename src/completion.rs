@@ -51,9 +51,11 @@ pub struct CommandScheme {
 }
 
 // MARK: TODO
-// Add support for recursive commands
-// currently we only support commands that only take one command as a clap value enum
-// we should be able to have interior commands still have args/flags ect..
+// 1. Add suppport for commands that have a X ammount of required input(s)
+//    while supporting completion for arguments and their rec trees
+// 2. Add support for recursive commands
+//    currently we only support commands that only take one command as a clap value enum
+//    we should be able to have interior commands still have args/flags ect..
 
 /// Tree node of [`CommandScheme`]
 ///
@@ -176,7 +178,7 @@ impl RecData {
         kind: RecKind,
         end: bool,
     ) -> Self {
-        RecData {
+        Self {
             parent,
             alias: if let Some(mapping) = alias {
                 Some(AliasData {
@@ -198,8 +200,29 @@ impl RecData {
         }
     }
 
+    pub const fn command_set(
+        alias: Option<&'static [(usize, usize)]>,
+        recs: Option<&'static [&'static str]>,
+        end: bool,
+    ) -> Self {
+        Self {
+            parent: None,
+            alias: if let Some(mapping) = alias {
+                Some(AliasData {
+                    rec_mapping: mapping,
+                })
+            } else {
+                None
+            },
+            short: None,
+            recs,
+            kind: RecKind::Command,
+            end,
+        }
+    }
+
     pub const fn help() -> Self {
-        RecData {
+        Self {
             parent: Some(UNIVERSAL),
             alias: None,
             short: None,
@@ -210,7 +233,7 @@ impl RecData {
     }
 
     const fn empty() -> Self {
-        RecData {
+        Self {
             parent: None,
             alias: None,
             short: None,
