@@ -51,11 +51,9 @@ pub struct CommandScheme {
 }
 
 // MARK: TODO
-// 1. Add suppport for commands that have a X ammount of required input(s)
-//    while supporting completion for arguments and their rec trees
-// 2. Add support for recursive commands
-//    currently we only support commands that only take one command as a clap value enum
-//    we should be able to have interior commands still have args/flags ect..
+// Add support for recursive commands
+// currently we only support commands that only take one command as a clap value enum
+// we should be able to have interior commands still have args/flags ect..
 
 /// Tree node of [`CommandScheme`]
 ///
@@ -258,7 +256,7 @@ impl RecData {
 #[derive(PartialEq, Eq, Debug)]
 pub enum RecKind {
     Command,
-    Argument,
+    Argument(usize),
     Value(Range<usize>),
     UserDefined(Range<usize>),
     Help,
@@ -266,16 +264,22 @@ pub enum RecKind {
 }
 
 impl RecKind {
+    pub const fn argument_with_no_required_inputs() -> Self {
+        Self::Argument(0)
+    }
+    pub const fn argument_with_required_user_defined(required: usize) -> Self {
+        Self::Argument(required)
+    }
     /// minimum of 1 arg is assumed
     pub const fn user_defined_with_num_args(max: usize) -> Self {
-        RecKind::UserDefined(Range {
+        Self::UserDefined(Range {
             start: 1,
             end: max.saturating_add(1),
         })
     }
     /// minimum of 1 arg is assumed
     pub const fn value_with_num_args(max: usize) -> Self {
-        RecKind::Value(Range {
+        Self::Value(Range {
             start: 1,
             end: max.saturating_add(1),
         })
@@ -325,7 +329,7 @@ impl From<&'static CommandScheme> for Completion {
                     ref alias,
                     ref recs,
                     ref short,
-                    kind: RecKind::Argument,
+                    kind: RecKind::Argument(_),
                     ..
                 } => {
                     let expected_len = inner.data.unique_rec_end();
@@ -405,7 +409,7 @@ impl From<&'static CommandScheme> for Completion {
         }
         let mut recomendations = value.commands.recs.expect("is some")[..expected_len].to_vec();
         recomendations.push(HELP_STR);
-        Completion {
+        Self {
             recomendations,
             input: CompletionState::default(),
             rec_map,
@@ -456,6 +460,7 @@ struct CompletionState {
     curr_command: Option<SliceData>,
     curr_argument: Option<SliceData>,
     curr_value: Option<SliceData>,
+    required_input_i: Vec<usize>,
     ending: LineEnd,
 }
 
@@ -492,6 +497,13 @@ struct LineEnd {
 impl CompletionState {
     /// returns `true` if method modifies `self`
     fn check_state(&mut self, line: &str) -> bool {
+        let mut state_modified = false;
+        if let Some(&required_user_defined_token_idx) = self.required_input_i.last() {
+            if line.trim_end().len() == required_user_defined_token_idx {
+                self.required_input_i.pop();
+                state_modified = true;
+            }
+        }
         if let Some(ref command) = self.curr_command {
             if line.len() == command.byte_start + command.slice_len {
                 (self.curr_command, self.curr_argument, self.curr_value) = (None, None, None);
@@ -510,7 +522,7 @@ impl CompletionState {
                 return true;
             }
         }
-        false
+        state_modified
     }
 
     fn update_curr_token(&mut self, line: &str) {
@@ -587,6 +599,11 @@ impl CompletionState {
     //         "    curr_value: {:?}\n",
     //         self.curr_value.as_ref().map(inner_fmt)
     //     ));
+    //     output.push_str(&format!(
+    //         "    required_input_ct: {}, last idx: {:?}\n",
+    //         self.required_input_i.len(),
+    //         self.required_input_i.last()
+    //     ));
     //     output.push_str(&format!("    user_input: {:?}\n", self.ending));
     //     output
     // }
@@ -627,7 +644,7 @@ impl SliceData {
         };
         match expected {
             RecKind::Command => completion.hash_command_unchecked(line, &mut data),
-            RecKind::Argument => completion.hash_arg_unchecked(line, &mut data),
+            RecKind::Argument(_) => completion.hash_arg_unchecked(line, &mut data),
             RecKind::Value(ref r) => {
                 completion.hash_value_unchecked(line, &mut data, r, arg_count.unwrap_or(1))
             }
@@ -854,6 +871,14 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         let mut errs = [false, false];
         for (i, err) in errs.iter_mut().enumerate() {
             *err = match recs[i].kind {
+                RecKind::Argument(required)
+                    if required > 0
+                        && required
+                            != self.completion.input.required_input_i.len()
+                                + !self.completion.input.ending.token.is_empty() as usize =>
+                {
+                    true
+                }
                 RecKind::Value(_) if user_input == HELP_ARG => false,
                 RecKind::Value(_) if !self.completion.value_valid(user_input, list_i[i]) => true,
                 RecKind::UserDefined(_) if trailing.is_empty() => true,
@@ -950,7 +975,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             && self.completion.curr_command().is_some_and(|cmd| {
                 matches!(
                     self.completion.rec_list[cmd.hash_i].kind,
-                    RecKind::Argument | RecKind::Value(_)
+                    RecKind::Argument(_) | RecKind::Value(_)
                 ) && {
                     last_key_trim = line_trim_start[cmd.slice_len..].trim_start();
                     !last_key_trim.is_empty()
@@ -1027,13 +1052,27 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                     let token_slice = token.to_slice_unchecked(line_trim_start);
                     (token_slice == HELP_ARG || token_slice == HELP_ARG_SHORT).then(|| {
                         token.hash_i = HELP;
-                        &RecKind::Argument
+                        &RecKind::Argument(0)
                     })
                 })
                 .unwrap_or(command_kind);
 
             match kind {
-                RecKind::Argument => self.completion.input.curr_argument = new,
+                &RecKind::Argument(required) => {
+                    // track the positon of user defined user required inputs for the current command
+                    match new {
+                        Some(SliceData {
+                            hash_i: INVALID,
+                            byte_start,
+                            slice_len,
+                        }) if self.completion.input.required_input_i.len() < required => self
+                            .completion
+                            .input
+                            .required_input_i
+                            .push(byte_start + slice_len),
+                        _ => self.completion.input.curr_argument = new,
+                    }
+                }
                 RecKind::Value(_) => self.completion.input.curr_value = new,
                 _ => unreachable!("by outer if"),
             }
@@ -1165,14 +1204,16 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
         let input_lower = self.curr_token().trim_start_matches('-').to_lowercase();
 
-        let rec_1 = (!self.curr_token().starts_with('-') || rec_data_1.kind == RecKind::Argument)
-            .then(|| rec_data_1.recs.map(|recs| recs.iter()))
-            .flatten();
+        let rec_1 = (!self.curr_token().starts_with('-')
+            || matches!(rec_data_1.kind, RecKind::Argument(_)))
+        .then(|| rec_data_1.recs.map(|recs| recs.iter()))
+        .flatten();
 
         let rec_2 = (self.completion.indexer.multiple
-            && (!self.curr_token().starts_with('-') || rec_data_2.kind == RecKind::Argument))
-            .then(|| rec_data_2.recs.map(|recs| recs.iter()))
-            .flatten();
+            && (!self.curr_token().starts_with('-')
+                || matches!(rec_data_2.kind, RecKind::Argument(_))))
+        .then(|| rec_data_2.recs.map(|recs| recs.iter()))
+        .flatten();
 
         let add_help = self.completion.add_help().then_some([HELP_STR].iter());
 
@@ -1219,7 +1260,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                         return Ok(());
                     }
                 }
-                RecKind::Argument => {
+                RecKind::Argument(_) => {
                     if let Some(user_input) = self.curr_token().strip_prefix("--") {
                         if user_input == self.completion.recomendations[0] {
                             return Ok(());
@@ -1263,7 +1304,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                             break next;
                         }
                     }
-                    RecKind::Argument => {
+                    RecKind::Argument(_) => {
                         if let Some(user_input) = self.curr_token().strip_prefix("--") {
                             if user_input == next {
                                 continue;
@@ -1317,7 +1358,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             };
 
             match kind {
-                RecKind::Argument => format_line(true),
+                RecKind::Argument(_) => format_line(true),
                 RecKind::Value(_) | RecKind::Command => format_line(false),
                 RecKind::Help => format_line(self.completion.curr_command().is_some()),
                 RecKind::UserDefined(_) | RecKind::Null => unreachable!("by guard clause"),

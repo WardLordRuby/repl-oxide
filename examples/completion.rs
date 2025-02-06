@@ -15,7 +15,8 @@ use repl_oxide::{
 #[derive(Parser)]
 #[command(
     name = "Example App",
-    about = "Example app showing repl-oxide's auto completion feature set"
+    about = "Example app showing repl-oxide's auto completion feature set \n\
+            Use the 'tab' key to predict or walk through available commands"
 )]
 enum Command {
     /// Repeats user input with optional transformations
@@ -108,7 +109,7 @@ const COMMAND_INNER: [InnerScheme; 3] = [
             // Specify the "echo" commands recommendations
             Some(&ECHO_RECS),
             // Discribe the recomendation kind as arguments
-            RecKind::Argument,
+            RecKind::argument_with_required_user_defined(1),
             // List as not the end of the recomendation tree
             false,
         ),
@@ -126,7 +127,7 @@ const COMMAND_INNER: [InnerScheme; 3] = [
             // Specify the "roll" commands recommendations
             Some(&ROLL_RECS),
             // Discribe the recomendation kind as arguments
-            RecKind::Argument,
+            RecKind::argument_with_no_required_inputs(),
             // List as not the end of the recomendation tree
             false,
         ),
@@ -190,8 +191,8 @@ impl Default for CommandContext {
 
 // Commands can be implemented on our context
 impl CommandContext {
-    fn roll(&mut self, new_sides: Option<usize>) -> io::Result<OurCommandHandle> {
-        if let Some(side_count) = new_sides {
+    fn roll(&mut self, input_dice: Option<usize>) -> io::Result<OurCommandHandle> {
+        if let Some(side_count) = input_dice {
             if side_count != self.dice_sides {
                 self.dice_sides = side_count;
                 println!("Updated dice side preference to {side_count}");
