@@ -108,7 +108,7 @@ const COMMAND_INNER: [InnerScheme; 3] = [
             Some(&ECHO_SHORT),
             // Specify the "echo" commands recommendations
             Some(&ECHO_RECS),
-            // Discribe the recomendation kind as arguments
+            // Discribe the recomendation kind as arguments where "echo" has one required input
             RecKind::argument_with_required_user_defined(1),
             // List as not the end of the recomendation tree
             false,
@@ -126,7 +126,7 @@ const COMMAND_INNER: [InnerScheme; 3] = [
             Some(&ROLL_SHORT),
             // Specify the "roll" commands recommendations
             Some(&ROLL_RECS),
-            // Discribe the recomendation kind as arguments
+            // Discribe the recomendation kind as arguments where "roll" has no required inputs
             RecKind::argument_with_no_required_inputs(),
             // List as not the end of the recomendation tree
             false,

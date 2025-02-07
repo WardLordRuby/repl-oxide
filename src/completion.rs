@@ -1247,7 +1247,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
     /// Changes the current user input to either `Next` or `Previous` suggestion depending on the given direction
     pub fn try_completion(&mut self, direction: Direction) -> io::Result<()> {
-        if !self.line.comp_enabled {
+        if !self.line.comp_enabled || self.completion.recomendations.is_empty() {
             return Ok(());
         }
 
