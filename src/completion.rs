@@ -675,8 +675,10 @@ impl Completion {
     }
     #[inline]
     fn add_help(&self) -> bool {
-        self.indexer.multiple
-            || (self.input.curr_value.is_none() && self.input.curr_argument.is_none())
+        !(self.rec_list[self.indexer.list.0].end
+            || self.indexer.multiple && self.rec_list[self.indexer.list.1].end)
+            && (self.indexer.multiple
+                || (self.input.curr_value.is_none() && self.input.curr_argument.is_none()))
     }
     #[inline]
     fn last_key(&self) -> Option<&SliceData> {

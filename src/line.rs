@@ -583,10 +583,10 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         &self.line.input
     }
 
-    /// Returns a mutable reference to the current user input
-    #[inline]
-    pub fn input_mut(&mut self) -> &mut String {
-        &mut self.line.input
+    /// Appends a given string slice to the end of the currently displayed input line
+    pub fn append_to_line(&mut self, new: &str) {
+        self.line.input.push_str(new);
+        self.line.len += new.chars().count() as u16;
     }
 
     /// Gets the number of lines wrapped
@@ -926,7 +926,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 self.new_line()?;
             }
             Event::Resize(x, y) => self.term_size = (x, y),
-            Event::Paste(new) => self.input_mut().push_str(&new),
+            Event::Paste(new) => self.append_to_line(&new),
             _ => {
                 self.uneventful = true;
                 execute!(self.term, EndSynchronizedUpdate)?;
