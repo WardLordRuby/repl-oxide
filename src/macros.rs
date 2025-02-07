@@ -38,7 +38,7 @@ macro_rules! process_callback {
 /// **Required Feature** = "macros"  
 /// The macros feature flag is included in both "runner" and "spawner" feature flags.
 ///
-/// This macro requries you to implement [`Executor`] on your `ctx`.
+/// This macro requries you to implement [`Executor`] on your `Context`.
 ///
 /// Internally uses the [`process_callback`] macro that relies on tracing's [`error!`] to log any errors.
 ///
@@ -71,11 +71,11 @@ macro_rules! general_event_process {
                 }
             }
             $crate::EventLoop::TryProcessInput(Err(mismatched_quotes)) => {
-                eprintln!(
+                $crate::println(format!(
                     "{}{mismatched_quotes}{}",
                     $crate::ansi_code::RED,
-                    $crate::ansi_code::RESET
-                )
+                    $crate::ansi_code::RESET,
+                ))?
             }
         }
     };

@@ -19,12 +19,12 @@ pub mod callback {
     // MARK: TODO
     // add documentation for these types
 
-    pub type InputEventHook<Ctx, W> =
-        dyn Fn(&mut LineReader<Ctx, W>, Event) -> io::Result<HookedEvent<Ctx>> + Send;
-    pub type ModLineState<Ctx, W> = dyn FnOnce(&mut LineReader<Ctx, W>) -> io::Result<()> + Send;
-    pub type Callback<Ctx> = dyn Fn(&mut Ctx) -> Result<(), InputHookErr> + Send;
-    pub type AsyncCallback<Ctx> = dyn for<'a> FnOnce(
-            &'a mut Ctx,
+    pub type InputEventHook<Context> =
+        dyn Fn(&mut LineReader<Context>, Event) -> io::Result<HookedEvent<Context>> + Send;
+    pub type ModLineState<Context> = dyn FnOnce(&mut LineReader<Context>) -> io::Result<()> + Send;
+    pub type Callback<Context> = dyn Fn(&mut Context) -> Result<(), InputHookErr> + Send;
+    pub type AsyncCallback<Context> = dyn for<'a> FnOnce(
+            &'a mut Context,
         )
             -> Pin<Box<dyn Future<Output = Result<(), InputHookErr>> + Send + 'a>>
         + Send;

@@ -1,7 +1,7 @@
-use crate::line::LineReader;
+use crate::{get_writer, line::LineReader};
 use std::{
     collections::{HashMap, HashSet},
-    io::{self, Write},
+    io,
     ops::Range,
 };
 
@@ -675,8 +675,10 @@ impl Completion {
     }
     #[inline]
     fn add_help(&self) -> bool {
-        self.indexer.multiple
-            || (self.input.curr_value.is_none() && self.input.curr_argument.is_none())
+        !(self.rec_list[self.indexer.list.0].end
+            || self.indexer.multiple && self.rec_list[self.indexer.list.1].end)
+            && (self.indexer.multiple
+                || (self.input.curr_value.is_none() && self.input.curr_argument.is_none()))
     }
     #[inline]
     fn last_key(&self) -> Option<&SliceData> {
@@ -841,7 +843,7 @@ impl Completion {
     }
 }
 
-impl<Ctx, W: Write> LineReader<Ctx, W> {
+impl<Context> LineReader<Context> {
     #[inline]
     fn curr_token(&self) -> &str {
         &self.completion.input.ending.token
@@ -1373,7 +1375,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             ),
         );
 
-        self.change_line(new_line)
+        self.change_line(new_line, &mut get_writer())
     }
 
     fn default_recomendations(&mut self) {

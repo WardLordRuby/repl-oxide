@@ -1,10 +1,7 @@
 // The helper macros for writing a custom loop requires the repl-oxide feature flag "macros"
 /*                   cargo r --example basic-custom --features="macros"                   */
 
-use std::{
-    fmt::Display,
-    io::{self, Stdout},
-};
+use std::{fmt::Display, io};
 
 use clap::Parser;
 use tokio::{
@@ -15,7 +12,7 @@ use tokio::{
 use repl_oxide::{
     ansi_code::{RED, RESET},
     executor::{format_for_clap, CommandHandle, Executor},
-    general_event_process, repl_builder, StreamExt,
+    general_event_process, println, repl_builder, StreamExt,
 };
 
 #[derive(Parser)]
@@ -29,24 +26,22 @@ enum Command {
     Quit,
 }
 
-type OurCommandHandle = CommandHandle<CommandContext, Stdout>;
-
 // Our context can store all persistent state. Commands can also be implemented on our
 // context See 'examples/runner.rs'
 struct CommandContext;
 
 // We can only use the library supplied `general_event_process!` macro if our `CommandContext`
 // implements `Executor`
-impl Executor<Stdout> for CommandContext {
+impl Executor for CommandContext {
     async fn try_execute_command(
         &mut self,
         user_tokens: Vec<String>,
-    ) -> io::Result<OurCommandHandle> {
+    ) -> io::Result<CommandHandle<CommandContext>> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
             Ok(command) => match command {
                 Command::Quit => Ok(CommandHandle::Exit),
             },
-            Err(err) => err.print().map(|_| CommandHandle::Processed),
+            Err(err) => println(err.render().ansi().to_string()).map(|_| CommandHandle::Processed),
         }
     }
 }

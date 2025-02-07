@@ -1,14 +1,14 @@
 // The basic `run` method requires the repl-oxide feature flag "runner"
 /*           cargo r --example runner --features="runner"            */
 
-use std::io::{self, Stdout};
+use std::io;
 
 use clap::{CommandFactory, Parser};
 use tokio::time::{sleep, Duration};
 
 use repl_oxide::{
     executor::{format_for_clap, CommandHandle, Executor},
-    repl_builder,
+    println, repl_builder,
 };
 
 #[derive(Parser)]
@@ -29,8 +29,6 @@ enum Command {
     Quit,
 }
 
-type OurCommandHandle = CommandHandle<CommandContext, Stdout>;
-
 // Our context can store all persistent state
 #[derive(Default)]
 struct CommandContext {
@@ -39,41 +37,44 @@ struct CommandContext {
 
 // Commands can be implemented on our context
 impl CommandContext {
-    async fn async_test() -> io::Result<OurCommandHandle> {
-        println!("Performing async tasks");
+    async fn async_test() -> io::Result<CommandHandle<CommandContext>> {
+        println("Performing async tasks")?;
         let t_1 = tokio::spawn(async {
             sleep(Duration::from_secs(1)).await;
-            println!("Finished task 1")
+            println("Finished task 1")
         });
         let t_2 = tokio::spawn(async {
             sleep(Duration::from_secs(2)).await;
-            println!("Finished task 2")
+            println("Finished task 2")
         });
-        let _ = tokio::join!(t_1, t_2);
+        let (res_1, res_2) = tokio::try_join!(t_1, t_2)?;
+        res_1?;
+        res_2?;
+
         Ok(CommandHandle::Processed)
     }
 
-    fn count(&mut self, add: Option<Vec<isize>>) -> io::Result<OurCommandHandle> {
+    fn count(&mut self, add: Option<Vec<isize>>) -> io::Result<CommandHandle<CommandContext>> {
         if let Some(numbers) = add {
             numbers.into_iter().for_each(|n| self.count += n);
         }
-        println!("Total seen: {}", self.count);
+        println(format!("Total seen: {}", self.count))?;
         Ok(CommandHandle::Processed)
     }
 }
 
-impl Executor<Stdout> for CommandContext {
+impl Executor for CommandContext {
     async fn try_execute_command(
         &mut self,
         user_tokens: Vec<String>,
-    ) -> io::Result<OurCommandHandle> {
+    ) -> io::Result<CommandHandle<CommandContext>> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
             Ok(command) => match command {
                 Command::Count { numbers } => self.count(numbers),
                 Command::Test => CommandContext::async_test().await,
                 Command::Quit => Ok(CommandHandle::Exit),
             },
-            Err(err) => err.print().map(|_| CommandHandle::Processed),
+            Err(err) => println(err.render().ansi().to_string()).map(|_| CommandHandle::Processed),
         }
     }
 }
@@ -91,7 +92,8 @@ async fn main() -> io::Result<()> {
     repl.run(&mut command_ctx).await?;
 
     // Perform cleanup / process final state
-    println!("Uploaded total count: {}, to server!", command_ctx.count);
-
-    Ok(())
+    println(format!(
+        "Uploaded total count: {}, to server!",
+        command_ctx.count
+    ))
 }

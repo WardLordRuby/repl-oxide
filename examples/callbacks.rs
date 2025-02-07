@@ -1,7 +1,7 @@
 // Example usage demonstrating the use of the available callback types
 /*         cargo r --example callbacks --features="runner"          */
 
-use std::io::{self, Stdout};
+use std::io;
 
 use clap::Parser;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
@@ -9,7 +9,7 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyModifiers};
 use repl_oxide::{
     callback::{InputEventHook, ModLineState},
     executor::{format_for_clap, CommandHandle, Executor},
-    repl_builder, HookedEvent, InputHook,
+    println, repl_builder, HookedEvent, InputHook,
 };
 
 #[derive(Parser)]
@@ -27,16 +27,16 @@ enum Command {
 // context See 'examples/runner.rs'
 struct CommandContext;
 
-fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {
+fn quit() -> io::Result<CommandHandle<CommandContext>> {
     // Change the line state as soon as we return our new `InputHook`
-    let init: Box<ModLineState<CommandContext, Stdout>> = Box::new(|handle| {
+    let init: Box<ModLineState<CommandContext>> = Box::new(|handle| {
         handle.disable_line_stylization();
         handle.set_prompt_and_separator("Are you sure? (y/n)", ":");
         Ok(())
     });
 
     // Revert the line state if the user chooses not to quit
-    let revert: Box<ModLineState<CommandContext, Stdout>> = Box::new(|handle| {
+    let revert: Box<ModLineState<CommandContext>> = Box::new(|handle| {
         handle.enable_line_stylization();
         handle.set_default_prompt_and_separator();
         Ok(())
@@ -44,7 +44,7 @@ fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {
 
     // Define how our `InputEventHook` reacts to `KeyEvent`s of `KeyEventKind::Press`
     // This could also easily be set up to only react apon enter, for simplicity we will just react apon press
-    let input_hook: Box<InputEventHook<CommandContext, Stdout>> =
+    let input_hook: Box<InputEventHook<CommandContext>> =
         Box::new(|_repl_handle, event| match event {
             Event::Key(
                 KeyEvent {
@@ -77,16 +77,16 @@ fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {
 }
 
 // Implement `Executor` so we can use `run`
-impl Executor<Stdout> for CommandContext {
+impl Executor for CommandContext {
     async fn try_execute_command(
         &mut self,
         user_tokens: Vec<String>,
-    ) -> io::Result<CommandHandle<CommandContext, Stdout>> {
+    ) -> io::Result<CommandHandle<CommandContext>> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
             Ok(command) => match command {
                 Command::Quit => quit(),
             },
-            Err(err) => err.print().map(|_| CommandHandle::Processed),
+            Err(err) => println(err.render().ansi().to_string()).map(|_| CommandHandle::Processed),
         }
     }
 }

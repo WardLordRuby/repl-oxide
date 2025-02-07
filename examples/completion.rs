@@ -1,7 +1,7 @@
 // Currently completion suggestions must be manually mapped out in a CONST context
 /*               cargo r --example completion --features="runner"               */
 
-use std::io::{self, Stdout};
+use std::io;
 
 use clap::{Args, CommandFactory, Parser, ValueEnum};
 use rand::Rng;
@@ -9,7 +9,7 @@ use rand::Rng;
 use repl_oxide::{
     completion::{CommandScheme, InnerScheme, RecData, RecKind, ROOT},
     executor::{format_for_clap, CommandHandle, Executor},
-    repl_builder,
+    println, repl_builder,
 };
 
 #[derive(Parser)]
@@ -176,8 +176,6 @@ const ROLL_INNER: [InnerScheme; 1] = [
     ),
 ];
 
-type OurCommandHandle = CommandHandle<CommandContext, Stdout>;
-
 // Our context can store all default/persistent state
 struct CommandContext {
     dice_sides: usize,
@@ -191,23 +189,23 @@ impl Default for CommandContext {
 
 // Commands can be implemented on our context
 impl CommandContext {
-    fn roll(&mut self, input_dice: Option<usize>) -> io::Result<OurCommandHandle> {
+    fn roll(&mut self, input_dice: Option<usize>) -> io::Result<CommandHandle<CommandContext>> {
         if let Some(side_count) = input_dice {
             if side_count != self.dice_sides {
                 self.dice_sides = side_count;
-                println!("Updated dice side preference to {side_count}");
+                println(format!("Updated dice side preference to {side_count}"))?;
             }
         }
 
-        println!(
+        println(format!(
             "You rolled a {}",
             rand::rng().random_range(1..self.dice_sides)
-        );
+        ))?;
 
         Ok(CommandHandle::Processed)
     }
 
-    fn echo(mut args: EchoArgs) -> io::Result<OurCommandHandle> {
+    fn echo(mut args: EchoArgs) -> io::Result<CommandHandle<CommandContext>> {
         if args.reverse {
             args.input = args.input.chars().rev().collect()
         }
@@ -219,24 +217,24 @@ impl CommandContext {
             }
         }
 
-        println!("{}", args.input);
+        println(args.input)?;
         Ok(CommandHandle::Processed)
     }
 }
 
 // Implement `Executor` so we can use `run`
-impl Executor<Stdout> for CommandContext {
+impl Executor for CommandContext {
     async fn try_execute_command(
         &mut self,
         user_tokens: Vec<String>,
-    ) -> io::Result<OurCommandHandle> {
+    ) -> io::Result<CommandHandle<CommandContext>> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
             Ok(command) => match command {
                 Command::Echo { args } => CommandContext::echo(args),
                 Command::Roll { sides } => self.roll(sides),
                 Command::Quit => Ok(CommandHandle::Exit),
             },
-            Err(err) => err.print().map(|_| CommandHandle::Processed),
+            Err(err) => println(err.render().ansi().to_string()).map(|_| CommandHandle::Processed),
         }
     }
 }

@@ -1,16 +1,12 @@
 use crate::{executor::Executor, general_event_process, line::LineReader};
 use crossterm::event::EventStream;
-use std::{
-    fmt::Display,
-    io::{self, Write},
-};
+use std::{fmt::Display, io};
 use tokio::{sync::mpsc::Sender, task::JoinHandle};
 use tokio_stream::StreamExt;
 
-impl<Ctx, W> LineReader<Ctx, W>
+impl<Context> LineReader<Context>
 where
-    Ctx: Executor<W> + Send + 'static,
-    W: Write + Send + 'static,
+    Context: Executor + Send + 'static,
 {
     // MARK: TODO
     // create example for writing your own repl look with & without macros
@@ -25,14 +21,14 @@ where
     /// dead locks, and have all the same functionality `spawn` provides.
     /// See example at: <EXAMPLE_NAME>
     ///
-    /// Avoid using `Ctx`'s whos fields contain `Arc<std::sync::Mutex<T>>` as it would be possible to run
+    /// Avoid using `Context`'s whos fields contain `Arc<std::sync::Mutex<T>>` as it would be possible to run
     /// into dead locks if the repl thread tries to access the mutex at the same time as your own main
     /// thread. Using an async aware [`tokio::sync::Mutex`] should avoid dead lock scenarios
     ///
     /// [`EventStream`]: <https://docs.rs/crossterm/0.28.1/crossterm/event/struct.EventStream.html>
     /// [`tokio::sync::Mutex`]: <https://docs.rs/tokio/latest/tokio/sync/struct.Mutex.html>
     /// [`tokio::sync::mpsc::Sender`]: <https://docs.rs/tokio/latest/tokio/sync/mpsc/struct.Sender.html>
-    pub fn spawn<M>(mut self, mut ctx: Ctx) -> (JoinHandle<io::Result<()>>, Sender<M>)
+    pub fn spawn<M>(mut self, mut ctx: Context) -> (JoinHandle<io::Result<()>>, Sender<M>)
     where
         M: Display + Send + 'static,
     {

@@ -1,5 +1,6 @@
 use crate::{
     completion::{CommandScheme, Completion},
+    get_writer, init_writer,
     line::{LineData, LineReader},
 };
 
@@ -11,10 +12,9 @@ use std::io::{self, ErrorKind, Write};
 /// Builder for custom REPL's
 ///
 /// Access through [`repl_builder`]
-pub struct LineReaderBuilder<'a, W: Write> {
+pub struct LineReaderBuilder<'a> {
     completion: Option<&'static CommandScheme>,
     custom_quit: Option<&'a str>,
-    term: W,
     term_size: Option<(u16, u16)>,
     prompt: Option<String>,
     prompt_end: Option<String>,
@@ -24,11 +24,11 @@ pub struct LineReaderBuilder<'a, W: Write> {
 /// Builder for [`LineReader`]
 ///
 /// `LineReader` must include a terminal that is compatable with executing commands via the `crossterm` crate.
-pub fn repl_builder<W: Write>(terminal: W) -> LineReaderBuilder<'static, W> {
+pub fn repl_builder<W: Write + Send + 'static>(writer: W) -> LineReaderBuilder<'static> {
+    init_writer(writer);
     LineReaderBuilder {
         completion: None,
         custom_quit: None,
-        term: terminal,
         term_size: None,
         prompt: None,
         prompt_end: None,
@@ -36,7 +36,7 @@ pub fn repl_builder<W: Write>(terminal: W) -> LineReaderBuilder<'static, W> {
     }
 }
 
-impl<'a, W: Write> LineReaderBuilder<'a, W> {
+impl<'a> LineReaderBuilder<'a> {
     /// Supply a custom command to be executed when the user tries to quit with 'ctrl + c' when the current
     /// line is empty, or anytime 'ctrl + d' is entered. If none is supplied [`EventLoop::Break`] will be
     /// returned.
@@ -48,7 +48,7 @@ impl<'a, W: Write> LineReaderBuilder<'a, W> {
     }
 }
 
-impl<W: Write> LineReaderBuilder<'_, W> {
+impl LineReaderBuilder<'_> {
     /// Specify a starting size the the terminal should be set to on [`build`] if no size is supplied then
     /// size is found with a call to [`terminal::size`]
     ///
@@ -102,10 +102,11 @@ impl<W: Write> LineReaderBuilder<'_, W> {
     /// [`spawn`]: crate::line::LineReader::spawn
     /// [`&'static CommandScheme`]: crate::completion::CommandScheme
     /// [`terminal::size`]: <https://docs.rs/crossterm/latest/crossterm/terminal/fn.size.html>
-    pub fn build<Ctx>(mut self) -> io::Result<LineReader<Ctx, W>> {
+    pub fn build<Context>(self) -> io::Result<LineReader<Context>> {
+        let mut term = get_writer();
         let term_size = match self.term_size {
             Some((columns, rows)) => {
-                self.term.queue(terminal::SetSize(columns, rows))?;
+                term.queue(terminal::SetSize(columns, rows))?;
                 (columns, rows)
             }
             None => terminal::size()?,
@@ -122,7 +123,7 @@ impl<W: Write> LineReaderBuilder<'_, W> {
         let completion = self.completion.map(Completion::from).unwrap_or_default();
 
         crossterm::terminal::enable_raw_mode()?;
-        self.term.queue(cursor::EnableBlinking)?;
+        term.queue(cursor::EnableBlinking)?;
 
         Ok(LineReader::new(
             LineData::new(
@@ -131,7 +132,6 @@ impl<W: Write> LineReaderBuilder<'_, W> {
                 self.style_enabled,
                 !completion.is_empty(),
             ),
-            self.term,
             term_size,
             custom_quit,
             completion,

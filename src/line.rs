@@ -7,18 +7,21 @@ use constcat::concat;
 use crossterm::{
     cursor,
     event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
-    execute,
     style::Print,
     terminal::{BeginSynchronizedUpdate, Clear, ClearType::FromCursorDown, EndSynchronizedUpdate},
-    QueueableCommand,
+    ExecutableCommand, QueueableCommand,
 };
+use parking_lot::{Mutex, MutexGuard};
 use shellwords::split as shellwords_split;
 use std::{
     borrow::Cow,
     collections::VecDeque,
     fmt::{Debug, Display},
     io::{self, Write},
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        OnceLock,
+    },
 };
 use strip_ansi::strip_ansi;
 use tokio::time::{timeout, Duration};
@@ -30,9 +33,6 @@ use tokio_stream::StreamExt;
 // 3. Detailed completion docs
 // 4. Finish docs + create README.md + add examples for all use cases
 
-// UNIX BUGS
-// 1. Renders print help incorrectly
-
 const DEFAULT_SEPARATOR: &str = ">";
 const DEFAULT_PROMPT: &str = ">";
 
@@ -40,28 +40,60 @@ const DEFAULT_PROMPT: &str = ">";
 // The '+ 1' is accounting for the space character located in our impl `Display` for `Self`
 const DEFAULT_PROMPT_LEN: u16 = DEFAULT_PROMPT.len() as u16 + DEFAULT_SEPARATOR.len() as u16 + 1;
 
-const NEW_LINE: &str = "\n";
+const NEW_LINE: &str = "\r\n";
 
 static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
 
+// Not sold on this static
+// - `LineReaderBuilder::build` can only be called once
+// - Have to aquire a lock everytime we need to write/send commands to the writer
+// - Use dynamic dispatch
+static WRITER: OnceLock<Mutex<Box<dyn Write + Send>>> = OnceLock::new();
+
+pub(crate) fn init_writer<W: Write + Send + 'static>(writer: W) {
+    WRITER
+        .set(Mutex::new(Box::new(writer)))
+        .unwrap_or_else(|_| panic!("REPL already initialized"));
+}
+
+pub(crate) fn get_writer() -> MutexGuard<'static, Box<dyn Write + Send>> {
+    WRITER.get().expect("REPL is not initialized").lock()
+}
+
+/// Supports printing multi-line strings. Replaces all new line characters with "\r\n" and writes into the
+/// repl's writer.
+///
+/// Since repl-oxide requires full control over the terminal driver and enforces "Raw Mode" via [`build`],
+/// [`std::println!`] on UNIX systems does not display text as it normally would. This function will ensure
+/// text is printed as you would expect on all targets.
+///
+/// [`build`]: crate::builder::LineReaderBuilder::build
+pub fn println<S: AsRef<str>>(str: S) -> io::Result<()> {
+    write!(
+        get_writer(),
+        "{}{NEW_LINE}",
+        str.as_ref().replace("\n", NEW_LINE)
+    )
+}
+
 /// Holds all context for REPL events
-pub struct LineReader<Ctx, W: Write> {
+pub struct LineReader<Context> {
     pub(crate) completion: Completion,
     pub(crate) line: LineData,
     history: History,
-    term: W,
     /// (columns, rows)
     term_size: (u16, u16),
     uneventful: bool,
     custom_quit: Option<Vec<String>>,
-    cursor_at_start: bool,
     command_entered: bool,
-    input_hooks: VecDeque<InputHook<Ctx, W>>,
+    input_hooks: VecDeque<InputHook<Context>>,
 }
 
-impl<Ctx, W: Write> Drop for LineReader<Ctx, W> {
+impl<Context> Drop for LineReader<Context> {
     fn drop(&mut self) {
-        execute!(self.term, cursor::Show).expect("Still accepting commands");
+        let _ = get_writer()
+            .execute(cursor::Show)
+            .expect("Still accepting commands");
         crossterm::terminal::disable_raw_mode().expect("enabled on creation");
     }
 }
@@ -94,20 +126,20 @@ impl<Ctx, W: Write> Drop for LineReader<Ctx, W> {
 /// [`conditionally_remove_hook`]: LineReader::conditionally_remove_hook
 /// [`new_hook_states`]: InputHook::new_hook_states
 /// [`no_state_change`]: InputHook::no_state_change
-pub struct InputHook<Ctx, W: Write> {
+pub struct InputHook<Context> {
     uid: HookUID,
-    init_revert: HookStates<Ctx, W>,
-    on_callback_err: Option<Box<Callback<Ctx>>>,
-    event_hook: Box<InputEventHook<Ctx, W>>,
+    init_revert: HookStates<Context>,
+    on_callback_err: Option<Box<Callback<Context>>>,
+    event_hook: Box<InputEventHook<Context>>,
 }
 
 /// Holds repl display state modifications on creation and drop of an [`InputHook`]
-pub struct HookStates<Ctx, W: Write> {
-    init: Option<Box<ModLineState<Ctx, W>>>,
-    revert: Option<Box<ModLineState<Ctx, W>>>,
+pub struct HookStates<Context> {
+    init: Option<Box<ModLineState<Context>>>,
+    revert: Option<Box<ModLineState<Context>>>,
 }
 
-impl<Ctx, W: Write> Default for HookStates<Ctx, W> {
+impl<Context> Default for HookStates<Context> {
     #[inline]
     fn default() -> Self {
         Self {
@@ -117,7 +149,7 @@ impl<Ctx, W: Write> Default for HookStates<Ctx, W> {
     }
 }
 
-impl<Ctx, W: Write> InputHook<Ctx, W> {
+impl<Context> InputHook<Context> {
     /// For use when creating an `InputHook` that contains a callback that can error, else use
     /// [`with_new_uid`]. Ensure that the `InputHook` and [`InputHookErr`] share the
     /// same [`HookUID`] obtained through [`HookUID::new`].
@@ -125,9 +157,9 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
     /// [`with_new_uid`]: Self::with_new_uid
     pub fn new(
         uid: HookUID,
-        init_revert: HookStates<Ctx, W>,
-        on_callback_err: Option<Box<Callback<Ctx>>>,
-        event_hook: Box<InputEventHook<Ctx, W>>,
+        init_revert: HookStates<Context>,
+        on_callback_err: Option<Box<Callback<Context>>>,
+        event_hook: Box<InputEventHook<Context>>,
     ) -> Self {
         assert!(uid.0 < HOOK_UID.load(Ordering::SeqCst));
         InputHook {
@@ -143,9 +175,9 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
     ///
     /// [`new`]: Self::new
     pub fn with_new_uid(
-        init_revert: HookStates<Ctx, W>,
-        on_callback_err: Option<Box<Callback<Ctx>>>,
-        event_hook: Box<InputEventHook<Ctx, W>>,
+        init_revert: HookStates<Context>,
+        on_callback_err: Option<Box<Callback<Context>>>,
+        event_hook: Box<InputEventHook<Context>>,
     ) -> Self {
         InputHook {
             uid: HookUID::new(),
@@ -157,15 +189,15 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
 
     /// For use when creating an `InputHook` that doesn't need to change the state on init and teardown
     #[inline]
-    pub fn no_state_change() -> HookStates<Ctx, W> {
+    pub fn no_state_change() -> HookStates<Context> {
         HookStates::default()
     }
 
     /// For use when creating an `InputHook` that has a unique state to display
     pub fn new_hook_states(
-        init: Box<ModLineState<Ctx, W>>,
-        revert: Box<ModLineState<Ctx, W>>,
-    ) -> HookStates<Ctx, W> {
+        init: Box<ModLineState<Context>>,
+        revert: Box<ModLineState<Context>>,
+    ) -> HookStates<Context> {
         HookStates {
             init: Some(init),
             revert: Some(revert),
@@ -315,15 +347,15 @@ pub enum HookControl {
 /// `HookedEvent` is the return type of [`InputEventHook`]. Contains both the instructions for the read eval
 /// print loop and the new state of [`InputEventHook`]. All `HookedEvent` constructors can not fail. They are
 /// always wrapped in `Ok` to reduce boilerplate
-pub struct HookedEvent<Ctx> {
-    event: EventLoop<Ctx>,
+pub struct HookedEvent<Context> {
+    event: EventLoop<Context>,
     new_state: HookControl,
 }
 
-impl<Ctx> HookedEvent<Ctx> {
+impl<Context> HookedEvent<Context> {
     /// Constructor can not fail, output is wrapped in `Ok` to reduce boilerplate
     #[inline]
-    pub fn new(event: EventLoop<Ctx>, new_state: HookControl) -> io::Result<Self> {
+    pub fn new(event: EventLoop<Context>, new_state: HookControl) -> io::Result<Self> {
         Ok(Self { event, new_state })
     }
 
@@ -361,7 +393,7 @@ impl<Ctx> HookedEvent<Ctx> {
 /// Communicates to the REPL how it should react to input events
 ///
 /// `EventLoop` enum acts as a control router for how your read eval print loop should react to input events.
-/// It provides mutable access back to your `Ctx` both synchronously and asynchronously. If your callback
+/// It provides mutable access back to your `Context` both synchronously and asynchronously. If your callback
 /// can error the [`conditionally_remove_hook`] method can restore the intial state of the `LineReader` as
 /// well as remove the queued input hook that was responsible for spawning the callback that resulted in an
 /// error.  
@@ -370,19 +402,18 @@ impl<Ctx> HookedEvent<Ctx> {
 ///
 /// [`conditionally_remove_hook`]: LineReader::conditionally_remove_hook
 /// [`shellwords::split`]: <https://docs.rs/shell-words/latest/shell_words/fn.split.html>
-pub enum EventLoop<Ctx> {
+pub enum EventLoop<Context> {
     Continue,
     Break,
-    AsyncCallback(Box<AsyncCallback<Ctx>>),
-    Callback(Box<Callback<Ctx>>),
+    AsyncCallback(Box<AsyncCallback<Context>>),
+    Callback(Box<Callback<Context>>),
     TryProcessInput(Result<Vec<String>, ParseErr>),
 }
 
-impl<Ctx, W: Write> LineReader<Ctx, W> {
+impl<Context> LineReader<Context> {
     #[inline]
     pub(crate) fn new(
         line: LineData,
-        term: W,
         term_size: (u16, u16),
         custom_quit: Option<Vec<String>>,
         completion: Completion,
@@ -390,10 +421,8 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         LineReader {
             line,
             history: History::default(),
-            term,
             term_size,
             uneventful: false,
-            cursor_at_start: false,
             command_entered: true,
             custom_quit,
             completion,
@@ -430,7 +459,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
     /// Run the reset state callback if present
     #[inline]
-    fn try_run_reset_callback(&mut self, to: HookStates<Ctx, W>) -> io::Result<()> {
+    fn try_run_reset_callback(&mut self, to: HookStates<Context>) -> io::Result<()> {
         let Some(reset) = to.revert else {
             return Ok(());
         };
@@ -446,7 +475,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
     /// Queues an [`InputHook`] for execution
     #[inline]
-    pub fn register_input_hook(&mut self, input_hook: InputHook<Ctx, W>) {
+    pub fn register_input_hook(&mut self, input_hook: InputHook<Context>) {
         self.input_hooks.push_back(input_hook);
     }
 
@@ -467,7 +496,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     pub fn conditionally_remove_hook(
         &mut self,
         err: &InputHookErr,
-    ) -> io::Result<Option<Box<Callback<Ctx>>>> {
+    ) -> io::Result<Option<Box<Callback<Context>>>> {
         if self
             .next_input_hook()
             .is_some_and(|hook| hook.uid == err.uid)
@@ -484,23 +513,28 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
     /// Pops the first queued `input_hook`
     #[inline]
-    fn pop_input_hook(&mut self) -> Option<InputHook<Ctx, W>> {
+    fn pop_input_hook(&mut self) -> Option<InputHook<Context>> {
         self.input_hooks.pop_front()
     }
 
     /// References the first queued `input_hook`
     #[inline]
-    fn next_input_hook(&mut self) -> Option<&InputHook<Ctx, W>> {
+    fn next_input_hook(&mut self) -> Option<&InputHook<Context>> {
         self.input_hooks.front()
     }
 
     /// Makes sure background messages are displayed properly
     pub fn print_background_msg<T: Display>(&mut self, msg: T) -> io::Result<()> {
-        execute!(self.term, BeginSynchronizedUpdate)?;
-        self.term.queue(cursor::Hide)?;
-        self.move_to_beginning(self.line_len())?;
-        self.term.queue(Print(msg))?.queue(Print(NEW_LINE))?;
-        self.cursor_at_start = false;
+        let mut writer = get_writer();
+        writer
+            .execute(BeginSynchronizedUpdate)?
+            .queue(cursor::Hide)?;
+        self.move_to_beginning(self.line_len(), &mut writer)?;
+        write!(
+            writer,
+            "{}{NEW_LINE}",
+            format!("{msg}").replace("\n", NEW_LINE)
+        )?;
         Ok(())
     }
 
@@ -606,26 +640,31 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         line_len % self.term_size.0
     }
 
-    pub(crate) fn move_to_beginning(&mut self, from: u16) -> io::Result<()> {
+    pub(crate) fn move_to_beginning<W: Write>(
+        &mut self,
+        from: u16,
+        writer: &mut MutexGuard<'_, W>,
+    ) -> io::Result<()> {
         let line_height = self.line_height(from);
         if line_height != 0 {
-            self.term.queue(cursor::MoveUp(line_height))?;
+            writer.queue(cursor::MoveUp(line_height))?;
         }
-        self.term
+        writer
             .queue(cursor::MoveToColumn(0))?
             .queue(Clear(FromCursorDown))?;
-
-        self.cursor_at_start = true;
         Ok(())
     }
 
-    fn move_to_end(&mut self, line_len: u16) -> io::Result<()> {
+    fn move_to_end<W: Write>(
+        &mut self,
+        line_len: u16,
+        writer: &mut MutexGuard<'_, W>,
+    ) -> io::Result<()> {
         let line_remaining_len = self.line_remainder(line_len);
         if line_remaining_len == 0 {
-            self.term.queue(Print(NEW_LINE))?;
+            writer.queue(Print(NEW_LINE))?;
         }
-        self.term.queue(cursor::MoveToColumn(line_remaining_len))?;
-        self.cursor_at_start = false;
+        writer.queue(cursor::MoveToColumn(line_remaining_len))?;
         Ok(())
     }
 
@@ -644,19 +683,18 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         };
 
         let line_len = self.line_len();
-        if !self.cursor_at_start {
-            self.move_to_beginning(line_len.saturating_sub(1))?;
-        }
+        let mut writer = get_writer();
+        self.move_to_beginning(line_len.saturating_sub(1), &mut writer)?;
 
-        self.term.queue(Print(&self.line))?;
-        self.move_to_end(line_len)?;
-        self.term.queue(cursor::Show)?;
+        writer.queue(Print(&self.line))?;
+        self.move_to_end(line_len, &mut writer)?;
+        writer.queue(cursor::Show)?.execute(EndSynchronizedUpdate)?;
 
-        execute!(self.term, EndSynchronizedUpdate)
+        Ok(())
     }
 
-    /// Setting uneventul will skip the next call to `render`
-    pub fn set_unventful(&mut self) {
+    /// Setting uneventful will skip the next call to `render`
+    pub fn set_uneventful(&mut self) {
         self.uneventful = true
     }
 
@@ -672,7 +710,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// Pops a char from the input line and tries to update suggestions if completion is enabled
     pub fn remove_char(&mut self) -> io::Result<()> {
         self.line.input.pop();
-        self.move_to_beginning(self.line_len())?;
+        self.move_to_beginning(self.line_len(), &mut get_writer())?;
         self.line.len = self.line.len.saturating_sub(1);
         if self.line.comp_enabled {
             self.update_completeion();
@@ -682,14 +720,14 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
     /// Writes the current line to the terminal and then returns [`clear_line`](Self::clear_line)
     pub fn new_line(&mut self) -> io::Result<String> {
-        self.term.queue(Print(NEW_LINE))?;
+        let _ = get_writer().queue(Print(NEW_LINE))?;
         self.clear_line()
     }
 
     /// Appends "^C" in red to the current line and writes it to the terminal and then returns
     /// [`clear_line`](Self::clear_line)
     pub fn ctrl_c_line(&mut self) -> io::Result<String> {
-        self.term.queue(Print(if self.line.style_enabled {
+        let _ = get_writer().queue(Print(if self.line.style_enabled {
             concat!(RED, "^C", RESET, NEW_LINE)
         } else {
             concat!("^C", NEW_LINE)
@@ -701,7 +739,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// returning you an owned `String` of what was cleared
     pub fn clear_line(&mut self) -> io::Result<String> {
         let old = self.reset_line_data();
-        self.move_to_beginning(self.line_len())?;
+        self.move_to_beginning(self.line_len(), &mut get_writer())?;
         self.reset_completion();
         self.reset_history_idx();
         Ok(old)
@@ -719,15 +757,19 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     }
 
     /// Does not support ansi codes within the input `line`
-    pub(crate) fn change_line(&mut self, line: String) -> io::Result<()> {
-        self.move_to_beginning(self.line_len())?;
+    pub(crate) fn change_line<W: Write>(
+        &mut self,
+        line: String,
+        writer: &mut MutexGuard<'_, W>,
+    ) -> io::Result<()> {
+        self.move_to_beginning(self.line_len(), writer)?;
         self.line.len = line.chars().count() as u16;
         self.line.input = line;
         Ok(())
     }
 
     fn enter_command(&mut self) -> io::Result<&str> {
-        self.term.queue(cursor::Hide)?;
+        let _ = get_writer().queue(cursor::Hide)?;
         let cmd = self.new_line()?;
         self.add_to_history(&cmd);
         self.command_entered = true;
@@ -756,7 +798,10 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             self.history.temp_top = std::mem::take(&mut self.line.input);
         }
         self.history.curr_index -= 1;
-        self.change_line(self.history.prev_entries[self.history.curr_index].clone())
+        self.change_line(
+            self.history.prev_entries[self.history.curr_index].clone(),
+            &mut get_writer(),
+        )
     }
 
     /// Changes the current line to the next history entry if available
@@ -771,7 +816,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             self.history.curr_index += 1;
             self.history.prev_entries[self.history.curr_index].clone()
         };
-        self.change_line(new_line)
+        self.change_line(new_line, &mut get_writer())
     }
 
     /// If a [custom quit command] is set this will tell the read eval print loop to process the set command
@@ -779,9 +824,9 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///
     /// [custom quit command]: crate::LineReaderBuilder::with_custom_quit_command
     /// [`EventLoop::Break`]: crate::line::EventLoop
-    pub fn process_close_signal(&mut self) -> io::Result<EventLoop<Ctx>> {
+    pub fn process_close_signal(&mut self) -> io::Result<EventLoop<Context>> {
         self.clear_line()?;
-        self.term.queue(cursor::Hide)?;
+        let _ = get_writer().queue(cursor::Hide)?;
         let Some(quit_cmd) = self.custom_quit.clone() else {
             return Ok(EventLoop::Break);
         };
@@ -792,7 +837,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// The main control flow for awaited events from a `crossterm::event::EventStream`. Works well as its
     /// own branch in a `tokio::select!`.
     ///
-    /// Example read eval print loop assuming we have a `Ctx`, `command_context`,  that implements
+    /// Example read eval print loop assuming we have a `Context`, `command_context`,  that implements
     /// [`Executor`]
     ///
     /// See: [`process_callback!`], for reducing boilerplate for callbacks if you plan to use the tracing
@@ -845,8 +890,8 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///
     /// [`Executor`]: crate::executor::Executor
     /// [`process_callback!`]: crate::process_callback
-    pub fn process_input_event(&mut self, event: Event) -> io::Result<EventLoop<Ctx>> {
-        execute!(self.term, BeginSynchronizedUpdate)?;
+    pub fn process_input_event(&mut self, event: Event) -> io::Result<EventLoop<Context>> {
+        let _ = get_writer().execute(BeginSynchronizedUpdate)?;
 
         if !self.input_hooks.is_empty() {
             if let Event::Key(KeyEvent {
@@ -929,7 +974,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             Event::Paste(new) => self.append_to_line(&new),
             _ => {
                 self.uneventful = true;
-                execute!(self.term, EndSynchronizedUpdate)?;
+                let _ = get_writer().execute(EndSynchronizedUpdate)?;
             }
         }
         Ok(EventLoop::Continue)

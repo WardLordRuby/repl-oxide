@@ -1,10 +1,7 @@
 // The `spawn` method requires the repl-oxide feature flag "spawner"
 /*         cargo r --example spawner --features="spawner"          */
 
-use std::{
-    fmt::Display,
-    io::{self, Stdout},
-};
+use std::{fmt::Display, io};
 
 use clap::Parser;
 use tokio::{
@@ -15,7 +12,7 @@ use tokio::{
 use repl_oxide::{
     ansi_code::{GREEN, RED, RESET},
     executor::{format_for_clap, CommandHandle, Executor},
-    repl_builder,
+    println, repl_builder,
 };
 
 #[derive(Parser)]
@@ -29,22 +26,20 @@ enum Command {
     Quit,
 }
 
-type OurCommandHandle = CommandHandle<CommandContext, Stdout>;
-
 // Our context can store all persistent state. Commands can also be implemented on our
 // context See 'examples/runner.rs'
 struct CommandContext;
 
-impl Executor<Stdout> for CommandContext {
+impl Executor for CommandContext {
     async fn try_execute_command(
         &mut self,
         user_tokens: Vec<String>,
-    ) -> io::Result<OurCommandHandle> {
+    ) -> io::Result<CommandHandle<CommandContext>> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
             Ok(command) => match command {
                 Command::Quit => Ok(CommandHandle::Exit),
             },
-            Err(err) => err.print().map(|_| CommandHandle::Processed),
+            Err(err) => println(err.render().ansi().to_string()).map(|_| CommandHandle::Processed),
         }
     }
 }

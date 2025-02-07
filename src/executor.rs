@@ -1,8 +1,5 @@
 use crate::line::InputHook;
-use std::{
-    future::Future,
-    io::{self, Write},
-};
+use std::{future::Future, io};
 
 /// Format tokens into what Clap's [`clap_derive::Parser`] trait expects
 ///
@@ -20,16 +17,16 @@ pub fn format_for_clap(
 /// [`InputHook`] to take control over [`KeyEvent`] processing
 ///
 /// [`KeyEvent`]: <https://docs.rs/crossterm/latest/crossterm/event/struct.KeyEvent.html>
-pub enum CommandHandle<Ctx, W: Write> {
+pub enum CommandHandle<Context> {
     Processed,
-    InsertHook(InputHook<Ctx, W>),
+    InsertHook(InputHook<Context>),
     Exit,
 }
 
 /// Required trait to implement for either pre-made REPL runner. [`run`] / [`spawn`]
 ///
 /// The `Executor` trait provides a optional way to structure how commands are handled through your generic
-/// `Ctx` struct.
+/// `Context` struct.
 ///
 /// Example using [`Stdout`] writer and [`try_parse_from`] via [`clap_derive::Parser`]
 /// ```ignore
@@ -64,9 +61,9 @@ pub enum CommandHandle<Ctx, W: Write> {
 /// [`spawn`]: crate::line::LineReader::spawn
 /// [`try_parse_from`]: <https://docs.rs/clap/latest/clap/trait.Parser.html#method.try_parse_from>
 /// [`clap_derive::Parser`]: <https://docs.rs/clap/latest/clap/trait.Parser.html>
-pub trait Executor<W: Write + Send>: Sized + Send {
+pub trait Executor: Sized + Send {
     fn try_execute_command(
         &mut self,
         user_tokens: Vec<String>,
-    ) -> impl Future<Output = io::Result<CommandHandle<Self, W>>> + Send;
+    ) -> impl Future<Output = io::Result<CommandHandle<Self>>> + Send;
 }
