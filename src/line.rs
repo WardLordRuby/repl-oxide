@@ -1,5 +1,5 @@
 use crate::{
-    ansi_code::{RED, RESET},
+    ansi_code::{DIM_WHITE, RED, RESET},
     callback::{AsyncCallback, Callback, InputEventHook, ModLineState},
     completion::{Completion, Direction},
 };
@@ -26,12 +26,14 @@ use tokio_stream::StreamExt;
 
 // MARK: TODOS
 // 1. Make the basic use cases as easy to set up as possible
-// 2. Create more examples (completion)
-// 3. Detailed completion docs
-// 4. Finish docs + create README.md + add examples for all use cases
+// 2. Create example for `Callback` and `AsyncCallback`
+// 3. Add docs for completion
+// 4. Finish doc todos + create README.md
 
-// UNIX BUGS
-// 1. Renders print help incorrectly
+// UNIX BUG
+// "Raw Mode" on unix needs "\r\n" line endings
+// This means the user can never use `println!` macros or be forced to append '\r' manually
+// - Proposed solution in staging -
 
 const DEFAULT_SEPARATOR: &str = ">";
 const DEFAULT_PROMPT: &str = ">";
@@ -48,8 +50,8 @@ static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
 pub struct LineReader<Ctx, W: Write> {
     pub(crate) completion: Completion,
     pub(crate) line: LineData,
-    history: History,
-    term: W,
+    pub(crate) history: History,
+    pub(crate) term: W,
     /// (columns, rows)
     term_size: (u16, u16),
     uneventful: bool,
@@ -65,9 +67,6 @@ impl<Ctx, W: Write> Drop for LineReader<Ctx, W> {
         crossterm::terminal::disable_raw_mode().expect("enabled on creation");
     }
 }
-
-// MARK: TODO
-// Make and update docs to have input hook example
 
 /// Powerful type that allows customization of library default implementations
 ///
@@ -86,7 +85,7 @@ impl<Ctx, W: Write> Drop for LineReader<Ctx, W> {
 /// Hooks require a [`InputEventHook`] this callback can be is entirely responsible for controlling _all_
 /// reactions to [`KeyEvent`]'s of kind: [`KeyEventKind::Press`]. This will act as a manual overide of the
 /// libraries event processor. You will have access to manually determine what methods are called on the
-/// [`LineReader`]. See: <INPUT_HOOK_EXAMPLE>
+/// [`LineReader`]. See: 'examples/callbacks.rs'
 ///
 /// [`Event`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html>
 /// [`KeyEvent`]: <https://docs.rs/crossterm/latest/crossterm/event/struct.KeyEvent.html>
@@ -226,12 +225,12 @@ impl Display for InputHookErr {
 pub(crate) struct LineData {
     pub(crate) prompt: String,
     pub(crate) prompt_separator: String,
-    prompt_len: u16,
     pub(crate) input: String,
-    len: u16,
     pub(crate) comp_enabled: bool,
     pub(crate) style_enabled: bool,
     pub(crate) err: bool,
+    len: u16,
+    prompt_len: u16,
 }
 
 impl LineData {
@@ -270,9 +269,9 @@ impl LineData {
 }
 
 #[derive(Default)]
-struct History {
+pub(crate) struct History {
+    pub(crate) prev_entries: Vec<String>,
     temp_top: String,
-    prev_entries: Vec<String>,
     curr_index: usize,
 }
 
@@ -499,7 +498,10 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         execute!(self.term, BeginSynchronizedUpdate)?;
         self.term.queue(cursor::Hide)?;
         self.move_to_beginning(self.line_len())?;
-        self.term.queue(Print(msg))?.queue(Print(NEW_LINE))?;
+        self.term
+            .queue(Clear(FromCursorDown))?
+            .queue(Print(msg))?
+            .queue(Print(NEW_LINE))?;
         self.cursor_at_start = false;
         Ok(())
     }
@@ -584,9 +586,11 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     }
 
     /// Appends a given string slice to the end of the currently displayed input line
-    pub fn append_to_line(&mut self, new: &str) {
+    pub fn append_to_line(&mut self, new: &str) -> io::Result<()> {
         self.line.input.push_str(new);
         self.line.len += new.chars().count() as u16;
+        self.move_to_end(self.line_len())?;
+        Ok(())
     }
 
     /// Gets the number of lines wrapped
@@ -611,10 +615,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         if line_height != 0 {
             self.term.queue(cursor::MoveUp(line_height))?;
         }
-        self.term
-            .queue(cursor::MoveToColumn(0))?
-            .queue(Clear(FromCursorDown))?;
-
+        self.term.queue(cursor::MoveToColumn(0))?;
         self.cursor_at_start = true;
         Ok(())
     }
@@ -623,6 +624,10 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         let line_remaining_len = self.line_remainder(line_len);
         if line_remaining_len == 0 {
             self.term.queue(Print(NEW_LINE))?;
+        }
+        let line_height = self.line_height(line_len);
+        if line_height != 0 {
+            self.term.queue(cursor::MoveDown(line_height))?;
         }
         self.term.queue(cursor::MoveToColumn(line_remaining_len))?;
         self.cursor_at_start = false;
@@ -646,9 +651,16 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         let line_len = self.line_len();
         if !self.cursor_at_start {
             self.move_to_beginning(line_len.saturating_sub(1))?;
+            self.term.queue(Clear(FromCursorDown))?;
         }
 
         self.term.queue(Print(&self.line))?;
+        self.update_ghost_text();
+        if let Some(ghost_text) = self.completion.ghost_text.as_deref() {
+            self.term
+                .queue(Print(format!("{DIM_WHITE}{ghost_text}{RESET}")))?;
+            self.move_to_beginning(line_len + ghost_text.chars().count() as u16)?;
+        };
         self.move_to_end(line_len)?;
         self.term.queue(cursor::Show)?;
 
@@ -656,8 +668,15 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     }
 
     /// Setting uneventul will skip the next call to `render`
-    pub fn set_unventful(&mut self) {
+    #[inline]
+    pub fn set_uneventful(&mut self) {
         self.uneventful = true
+    }
+
+    /// Returns if uneventful is currently set
+    #[inline]
+    pub fn uneventful(&self) -> bool {
+        self.uneventful
     }
 
     /// Pushes a char onto the input line and tries to update suggestions if completion is enabled
@@ -673,6 +692,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     pub fn remove_char(&mut self) -> io::Result<()> {
         self.line.input.pop();
         self.move_to_beginning(self.line_len())?;
+        self.term.queue(Clear(FromCursorDown))?;
         self.line.len = self.line.len.saturating_sub(1);
         if self.line.comp_enabled {
             self.update_completeion();
@@ -680,31 +700,43 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         Ok(())
     }
 
-    /// Writes the current line to the terminal and then returns [`clear_line`](Self::clear_line)
+    /// Writes the current line to the terminal and returns the user input of the line
     pub fn new_line(&mut self) -> io::Result<String> {
-        self.term.queue(Print(NEW_LINE))?;
-        self.clear_line()
+        self.term
+            .queue(Clear(FromCursorDown))?
+            .queue(Print(NEW_LINE))?;
+        Ok(self.reset_line_state())
     }
 
-    /// Appends "^C" in red to the current line and writes it to the terminal and then returns
-    /// [`clear_line`](Self::clear_line)
+    /// Appends "^C" (color coded if style is enabled) to the current line, writes it to the terminal,
+    /// and returns the user input of the line
     pub fn ctrl_c_line(&mut self) -> io::Result<String> {
-        self.term.queue(Print(if self.line.style_enabled {
-            concat!(RED, "^C", RESET, NEW_LINE)
-        } else {
-            concat!("^C", NEW_LINE)
-        }))?;
-        self.clear_line()
+        self.term
+            .queue(Print(if self.line.style_enabled {
+                concat!(RED, "^C", RESET)
+            } else {
+                "^C"
+            }))?
+            .queue(Clear(FromCursorDown))?
+            .queue(Print(NEW_LINE))?;
+        Ok(self.reset_line_state())
+    }
+
+    /// Clears the current line and returns the user input of the line
+    pub fn clear_line(&mut self) -> io::Result<String> {
+        self.move_to_beginning(self.line_len())?;
+        self.term.queue(Clear(FromCursorDown))?;
+        Ok(self.reset_line_state())
     }
 
     /// Resets the internal state of the input line, last history index, and completion suggestions
-    /// returning you an owned `String` of what was cleared
-    pub fn clear_line(&mut self) -> io::Result<String> {
-        let old = self.reset_line_data();
-        self.move_to_beginning(self.line_len())?;
+    /// returning you an owned `String` of what was cleared.
+    fn reset_line_state(&mut self) -> String {
         self.reset_completion();
         self.reset_history_idx();
-        Ok(old)
+        self.line.len = 0;
+        self.line.err = false;
+        std::mem::take(&mut self.line.input)
     }
 
     #[inline]
@@ -712,15 +744,10 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.history.curr_index = self.history.prev_entries.len();
     }
 
-    fn reset_line_data(&mut self) -> String {
-        self.line.len = 0;
-        self.line.err = false;
-        std::mem::take(&mut self.line.input)
-    }
-
     /// Does not support ansi codes within the input `line`
     pub(crate) fn change_line(&mut self, line: String) -> io::Result<()> {
         self.move_to_beginning(self.line_len())?;
+        self.term.queue(Clear(FromCursorDown))?;
         self.line.len = line.chars().count() as u16;
         self.line.input = line;
         Ok(())
@@ -737,6 +764,16 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             .prev_entries
             .last()
             .expect("just pushed into `prev_entries`"))
+    }
+
+    fn append_ghost_text(&mut self) -> io::Result<()> {
+        let Some(ghost_text) = self.completion.ghost_text.take() else {
+            self.set_uneventful();
+            return Ok(());
+        };
+        self.append_to_line(&ghost_text)?;
+        self.update_completeion();
+        Ok(())
     }
 
     /// Pushes onto history and resets the internal history index to the top
@@ -893,6 +930,11 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 ..
             }) => self.try_completion(Direction::Previous)?,
             Event::Key(KeyEvent {
+                code: KeyCode::Right,
+                kind: KeyEventKind::Press,
+                ..
+            }) => self.append_ghost_text()?,
+            Event::Key(KeyEvent {
                 code: KeyCode::Char(c),
                 kind: KeyEventKind::Press,
                 ..
@@ -926,11 +968,11 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 self.new_line()?;
             }
             Event::Resize(x, y) => self.term_size = (x, y),
-            Event::Paste(new) => self.append_to_line(&new),
-            _ => {
-                self.uneventful = true;
-                execute!(self.term, EndSynchronizedUpdate)?;
-            }
+            Event::Paste(new) => self.append_to_line(&new)?,
+            _ => self.set_uneventful(),
+        }
+        if self.uneventful() {
+            execute!(self.term, EndSynchronizedUpdate)?;
         }
         Ok(EventLoop::Continue)
     }

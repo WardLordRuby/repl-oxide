@@ -3,7 +3,7 @@
 
 use std::io::{self, Stdout};
 
-use clap::{Args, CommandFactory, Parser, ValueEnum};
+use clap::{value_parser, Args, CommandFactory, Parser, ValueEnum};
 use rand::Rng;
 
 use repl_oxide::{
@@ -14,7 +14,7 @@ use repl_oxide::{
 
 #[derive(Parser)]
 #[command(
-    name = "Example App",
+    name = "", // Leaving name empty will give us more accurate clap help and error messages
     about = "Example app showing repl-oxide's auto completion feature set \n\
             Use the 'tab' key to predict or walk through available commands"
 )]
@@ -30,8 +30,8 @@ enum Command {
     #[command(alias = "Roll")]
     Roll {
         /// Set your dice preference that the roll command should use
-        #[arg(long, short)]
-        sides: Option<usize>,
+        #[arg(long, short, value_parser = value_parser!(u8).range(2..=120))]
+        sides: Option<u8>,
     },
 
     /// Exit the command line REPL
@@ -180,7 +180,7 @@ type OurCommandHandle = CommandHandle<CommandContext, Stdout>;
 
 // Our context can store all default/persistent state
 struct CommandContext {
-    dice_sides: usize,
+    dice_sides: u8,
 }
 
 impl Default for CommandContext {
@@ -191,7 +191,7 @@ impl Default for CommandContext {
 
 // Commands can be implemented on our context
 impl CommandContext {
-    fn roll(&mut self, input_dice: Option<usize>) -> io::Result<OurCommandHandle> {
+    fn roll(&mut self, input_dice: Option<u8>) -> io::Result<OurCommandHandle> {
         if let Some(side_count) = input_dice {
             if side_count != self.dice_sides {
                 self.dice_sides = side_count;
@@ -201,7 +201,7 @@ impl CommandContext {
 
         println!(
             "You rolled a {}",
-            rand::rng().random_range(1..self.dice_sides)
+            rand::rng().random_range(1..=self.dice_sides)
         );
 
         Ok(CommandHandle::Processed)

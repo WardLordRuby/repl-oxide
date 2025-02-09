@@ -7,7 +7,7 @@ impl<Ctx: Executor<W>, W: Write + Send> LineReader<Ctx, W> {
     /// **Required Feature** = "runner"
     ///
     /// Intended to consume the main function during repl operation. If you are looking to spawn the
-    /// repl to be managed by a tokio runtime see: [`spawn`] using the feature flag "spawner"
+    /// repl to be managed by a tokio runtime, see: [`spawn`] using the feature flag "spawner"
     ///
     /// [`spawn`]: crate::line::LineReader::spawn
     pub async fn run(&mut self, ctx: &mut Ctx) -> io::Result<()> {

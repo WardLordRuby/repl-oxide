@@ -181,9 +181,10 @@ fn stylize_input(input: &str) -> (String, bool) {
         advance_ws(&mut ctx);
     }
 
-    if let Some((_, start, _)) = ctx.open_quote {
-        ctx.push(&input[start..]);
-    }
+    let remainder = ctx
+        .open_quote
+        .map_or(ctx.white_space_start, |(_, start, _)| start);
+    ctx.push(&input[remainder..]);
 
     if ctx.curr_color != TextColor::White {
         ctx.set_color(TextColor::White);

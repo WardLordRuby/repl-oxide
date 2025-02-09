@@ -72,38 +72,38 @@ pub struct CommandScheme {
 ///  - if `data.kind` is `RecKind::Argument` `inner` must contain the same number of elements as `data.starting_alias`  
 ///  - for all other kinds `inner` must be `None`
 pub struct InnerScheme {
-    /// data that describes recomendations context
+    /// Data that describes recommendations context
     data: RecData,
 
-    /// inner data shares indices with `data.recs`
+    /// Inner data shares indices with `data.recs`
     inner: Option<&'static [Self]>,
 }
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct RecData {
-    /// name of the parent entry
+    /// Name of the parent entry
     parent: Option<&'static str>,
-    /// required data if this node contains any aliases
+    /// Required data if this node contains any aliases
     alias: Option<AliasData>,
-    /// required data if containing recs support a short arg syntax
+    /// Required data if containing recs support a short arg syntax
     short: Option<ShortData>,
-    /// recomendations followed by recomendation aliases
+    /// Recommendations followed by recomendation aliases
     recs: Option<&'static [&'static str]>,
-    /// kind of data stored
+    /// Kind of data stored
     kind: RecKind,
-    /// signals this is a leaf node
+    /// Signals this is a leaf node
     end: bool,
 }
 
 #[derive(PartialEq, Eq, Debug)]
 struct AliasData {
-    /// index of rec in `recs` -> index of alias in `recs`
+    /// Index of rec in `recs` -> index of alias in `recs`
     rec_mapping: &'static [(usize, usize)],
 }
 
 #[derive(PartialEq, Eq, Debug)]
 struct ShortData {
-    /// index of rec in `recs` -> short char
+    /// Index of rec in `recs` -> short char
     short_mapping: &'static [(usize, &'static str)],
 }
 
@@ -247,9 +247,10 @@ impl RecData {
     }
 
     fn unique_rec_end(&self) -> usize {
-        self.alias.as_ref().map_or(self.rec_len(), |data| {
-            self.rec_len() - data.rec_mapping.len()
-        })
+        let len = self.rec_len();
+        self.alias
+            .as_ref()
+            .map_or(len, |data| len - data.rec_mapping.len())
     }
 }
 
@@ -264,20 +265,23 @@ pub enum RecKind {
 }
 
 impl RecKind {
+    /// Use when the command has no required number of user inputs
     pub const fn argument_with_no_required_inputs() -> Self {
         Self::Argument(0)
     }
+
+    /// Use when the command has a required number of user inputs
     pub const fn argument_with_required_user_defined(required: usize) -> Self {
         Self::Argument(required)
     }
-    /// minimum of 1 arg is assumed
+    /// Minimum of 1 arg is assumed
     pub const fn user_defined_with_num_args(max: usize) -> Self {
         Self::UserDefined(Range {
             start: 1,
             end: max.saturating_add(1),
         })
     }
-    /// minimum of 1 arg is assumed
+    /// Minimum of 1 arg is assumed
     pub const fn value_with_num_args(max: usize) -> Self {
         Self::Value(Range {
             start: 1,
@@ -407,10 +411,11 @@ impl From<&'static CommandScheme> for Completion {
             }
             walk_inner(inner, &mut rec_list, &mut rec_map, &mut value_sets);
         }
-        let mut recomendations = value.commands.recs.expect("is some")[..expected_len].to_vec();
-        recomendations.push(HELP_STR);
+        let mut recommendations = value.commands.recs.expect("is some")[..expected_len].to_vec();
+        recommendations.push(HELP_STR);
         Self {
-            recomendations,
+            recommendations,
+            ghost_text: None,
             input: CompletionState::default(),
             rec_map,
             rec_list,
@@ -423,13 +428,14 @@ impl From<&'static CommandScheme> for Completion {
 /// On startup the [`CommandScheme`] tree structure gets flattended into this structure
 ///
 /// The goal of `Completion` is to provide efficent lookups to the correct data that should be used to
-/// compute the best recomendations for the user with any given input. `Completion` also holds the current
+/// compute the best recommendations for the user with any given input. `Completion` also holds the current
 /// line state in field `input` `CompletionState` aims to provide accurate slices into the string
 /// `LineReader.line.input` since this struct is nested within `LineReader` we manage str slicing by
 /// indexes and lens  
 #[derive(Default)]
 pub struct Completion {
-    recomendations: Vec<&'static str>,
+    recommendations: Vec<&'static str>,
+    pub(crate) ghost_text: Option<String>,
     input: CompletionState,
     indexer: Indexer,
     rec_list: Vec<&'static RecData>,
@@ -437,10 +443,30 @@ pub struct Completion {
     value_sets: HashMap<usize, HashSet<&'static str>>,
 }
 
+/// `Indexer` keeps track of various indexes for the current suggestion state
 struct Indexer {
+    /// `list.0` points to the currently used [`RecData`] in [`Completion.rec_list`]  
+    /// `list.1` is only used when `Self.multiple`
+    ///
+    /// [`Completion.rec_list`]: Completion
     list: (usize, usize),
+
+    /// Flag meaning more than one catagory of recommendations are valid at the same time, and the index
+    /// `Self.list.1` should be used to give accurate recommendations
     multiple: bool,
+
+    /// Collection of indexes of entries within [`Completion.recommendations`] that were added from `Self.list.1`
+    ///
+    /// [`Completion.recommendations`]: Completion
     in_list_2: Vec<i8>,
+
+    /// The index of the currently suggested recomendation within [`Completion.recommendations`]  
+    /// This value is a signed int because [`USER_INPUT`] is used as marker of when it is time to loop back around
+    /// and recommend the original text that the user used to start the completion chain.
+    ///
+    /// This index can be back traced to its [`RecData`] via [`Completion::rec_data_from_index`]
+    ///
+    /// [`Completion.recommendations`]: Completion
     recs: i8,
 }
 
@@ -465,7 +491,7 @@ struct CompletionState {
 }
 
 #[derive(Clone, Copy, Default, Debug)]
-/// representes a String slice entry into `LineData.line().trim_start()`
+/// Represents a `&str` into `LineData.input.trim_start()`
 struct SliceData {
     byte_start: usize,
     slice_len: usize,
@@ -482,9 +508,7 @@ impl Eq for SliceData {}
 
 impl SliceData {
     fn exact_eq(&self, other: &Self) -> bool {
-        self.byte_start == other.byte_start
-            && self.slice_len == other.slice_len
-            && self.hash_i == other.hash_i
+        self == other && self.hash_i == other.hash_i
     }
 }
 
@@ -629,6 +653,7 @@ impl Validity for Option<&SliceData> {
 }
 
 impl SliceData {
+    /// Caller is responsible for making the given `byte_start`, `slice_len` are valid indices into the given `line`
     fn from_raw_unchecked(
         byte_start: usize,
         slice_len: usize,
@@ -653,6 +678,8 @@ impl SliceData {
         data
     }
 
+    /// Caller must ensure that the input line is: `LineData.input.trim_start()` otherwise this
+    /// method will panic as it performs a manual slice into the input `line`
     fn to_slice_unchecked(self, line: &str) -> &str {
         &line[self.byte_start..self.byte_start + self.slice_len]
     }
@@ -664,11 +691,20 @@ impl Completion {
         self.rec_list.is_empty()
     }
 
-    fn rec_data_from_unchecked(&self, recomendation_i: &i8) -> &RecData {
+    // MARK: TODO
+    // add documentation on all "unchecked" functions on what needs to be gaurenteed by the caller
+
+    /// Aquires the [`RecData`] of any [`recommendation`] via its index
+    ///
+    /// This method assumes the caller has checked that the given index is not [`USER_INPUT`]
+    /// in that case this method would be pointless to call since it does not have any `RecData`
+    ///
+    /// [`recommendation`]: Completion
+    fn rec_data_from_index(&self, recomendation_i: i8) -> &RecData {
         if !self.indexer.multiple {
             return self.rec_list[self.indexer.list.0];
         }
-        if self.indexer.in_list_2.contains(recomendation_i) {
+        if self.indexer.in_list_2.contains(&recomendation_i) {
             return self.rec_list[self.indexer.list.1];
         }
         self.rec_list[self.indexer.list.0]
@@ -771,6 +807,8 @@ impl Completion {
         (prev_token, nvals.saturating_sub(1))
     }
 
+    /// Caller must ensure that the given line is `LineData.input.trim_start()` as internally
+    /// [SliceData::to_slice_unchecked] is called
     fn hash_command_unchecked(&self, line: &str, command: &mut SliceData) {
         let command_str = command.to_slice_unchecked(line);
         if command_str.starts_with('-') {
@@ -798,6 +836,8 @@ impl Completion {
         }
     }
 
+    /// Caller must ensure that the given line is `LineData.input.trim_start()` as internally
+    /// [SliceData::to_slice_unchecked] is called
     fn hash_arg_unchecked(&self, line: &str, arg: &mut SliceData) {
         let arg_str = arg.to_slice_unchecked(line);
         if !arg_str.starts_with('-') {
@@ -817,6 +857,8 @@ impl Completion {
         }
     }
 
+    /// Caller must ensure that the given line is `LineData.input.trim_start()` as internally
+    /// [SliceData::to_slice_unchecked] is called
     fn hash_value_unchecked(
         &self,
         line: &str,
@@ -839,6 +881,16 @@ impl Completion {
 
         if self.value_valid(val_str, parent.hash_i) {
             arg.hash_i = VALID;
+        }
+    }
+
+    /// Returns `true` if the given `kind` should be formatted as an argument
+    fn arg_format(&self, kind: &RecKind) -> Option<bool> {
+        match kind {
+            RecKind::Argument(_) => Some(true),
+            RecKind::Value(_) | RecKind::Command => Some(false),
+            RecKind::Help => Some(self.curr_command().is_some()),
+            RecKind::UserDefined(_) | RecKind::Null => None,
         }
     }
 }
@@ -918,7 +970,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         let line_trim_start = self.line.input.trim_start();
         if line_trim_start.is_empty() {
             if !self.completion.is_empty() {
-                self.default_recomendations();
+                self.default_recommendations();
             }
             self.line.err = false;
             self.completion.input.ending = LineEnd::default();
@@ -1185,21 +1237,21 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
         if self.curr_token().is_empty() {
             if let Some(recs) = rec_data_1.recs {
-                self.completion.recomendations = recs[..rec_data_1.unique_rec_end()].to_vec();
+                self.completion.recommendations = recs[..rec_data_1.unique_rec_end()].to_vec();
             } else {
-                self.completion.recomendations.clear();
+                self.completion.recommendations.clear();
             }
             if self.completion.indexer.multiple {
                 if let Some(recs2) = rec_data_2.recs {
-                    let rec_len = self.completion.recomendations.len() as i8;
+                    let rec_len = self.completion.recommendations.len() as i8;
                     let recs2 = &recs2[..rec_data_2.unique_rec_end()];
                     self.completion.indexer.in_list_2 =
                         (rec_len..rec_len + recs2.len() as i8).collect();
-                    self.completion.recomendations.extend(recs2);
+                    self.completion.recommendations.extend(recs2);
                 }
             }
             if self.completion.add_help() {
-                self.completion.recomendations.push(HELP_STR);
+                self.completion.recommendations.push(HELP_STR);
             }
             return;
         }
@@ -1219,7 +1271,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
         let add_help = self.completion.add_help().then_some([HELP_STR].iter());
 
-        let mut recomendations = std::iter::empty()
+        let mut recommendations = std::iter::empty()
             .chain(rec_1.unwrap_or_default())
             .chain(rec_2.unwrap_or_default())
             .chain(add_help.unwrap_or_default())
@@ -1227,7 +1279,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             .copied()
             .collect::<Vec<_>>();
 
-        recomendations.sort_unstable_by(|a, b| {
+        recommendations.sort_unstable_by(|a, b| {
             let a_starts = a.starts_with(&input_lower);
             let b_starts = b.starts_with(&input_lower);
             b_starts.cmp(&a_starts)
@@ -1236,7 +1288,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         if self.completion.indexer.multiple {
             if let Some(recs2) = rec_data_2.recs {
                 self.completion.indexer.in_list_2.clear();
-                for (i, rec) in recomendations.iter().enumerate() {
+                for (i, rec) in recommendations.iter().enumerate() {
                     if recs2.contains(rec) {
                         self.completion.indexer.in_list_2.push(i as i8);
                     }
@@ -1244,19 +1296,19 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             }
         }
 
-        self.completion.recomendations = recomendations;
+        self.completion.recommendations = recommendations;
     }
 
     /// Changes the current user input to either `Next` or `Previous` suggestion depending on the given direction
     pub fn try_completion(&mut self, direction: Direction) -> io::Result<()> {
-        if !self.line.comp_enabled || self.completion.recomendations.is_empty() {
+        if !self.line.comp_enabled || self.completion.recommendations.is_empty() {
             return Ok(());
         }
 
-        if self.completion.recomendations.len() == 1 {
-            match self.completion.rec_data_from_unchecked(&0).kind {
+        if self.completion.recommendations.len() == 1 {
+            match self.completion.rec_data_from_index(0).kind {
                 RecKind::Value(_) => {
-                    if self.curr_token() == self.completion.recomendations[0]
+                    if self.curr_token() == self.completion.recommendations[0]
                         && self.curr_token() != HELP_STR
                     {
                         return Ok(());
@@ -1264,13 +1316,13 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 }
                 RecKind::Argument(_) => {
                     if let Some(user_input) = self.curr_token().strip_prefix("--") {
-                        if user_input == self.completion.recomendations[0] {
+                        if user_input == self.completion.recommendations[0] {
                             return Ok(());
                         }
                     }
                 }
                 _ => {
-                    if self.curr_token() == self.completion.recomendations[0] {
+                    if self.curr_token() == self.completion.recommendations[0] {
                         return Ok(());
                     }
                 }
@@ -1284,9 +1336,9 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             };
 
             match self.completion.indexer.recs {
-                i if i >= USER_INPUT && i < self.completion.recomendations.len() as i8 => (),
+                i if i >= USER_INPUT && i < self.completion.recommendations.len() as i8 => (),
                 i if i < USER_INPUT => {
-                    self.completion.indexer.recs = self.completion.recomendations.len() as i8 - 1
+                    self.completion.indexer.recs = self.completion.recommendations.len() as i8 - 1
                 }
                 _ => self.completion.indexer.recs = USER_INPUT,
             }
@@ -1294,11 +1346,11 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             if self.completion.indexer.recs == USER_INPUT {
                 break self.curr_token();
             } else {
-                let next = self.completion.recomendations[self.completion.indexer.recs as usize];
+                let next = self.completion.recommendations[self.completion.indexer.recs as usize];
                 // Saftey: can call into `rec_data_from_unchecked` since we guard against the unsafe input above
                 match self
                     .completion
-                    .rec_data_from_unchecked(&self.completion.indexer.recs)
+                    .rec_data_from_index(self.completion.indexer.recs)
                     .kind
                 {
                     RecKind::Value(_) => {
@@ -1355,16 +1407,15 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 // Saftey: can call into `rec_data_from_unchecked` since we guard against the unsafe input above
                 &self
                     .completion
-                    .rec_data_from_unchecked(&self.completion.indexer.recs)
+                    .rec_data_from_index(self.completion.indexer.recs)
                     .kind
             };
 
-            match kind {
-                RecKind::Argument(_) => format_line(true),
-                RecKind::Value(_) | RecKind::Command => format_line(false),
-                RecKind::Help => format_line(self.completion.curr_command().is_some()),
-                RecKind::UserDefined(_) | RecKind::Null => unreachable!("by guard clause"),
-            }
+            format_line(
+                self.completion
+                    .arg_format(kind)
+                    .expect("guard clause covers `UserInput` and `Null`"),
+            )
         };
 
         self.line.found_err(
@@ -1378,12 +1429,12 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.change_line(new_line)
     }
 
-    fn default_recomendations(&mut self) {
+    fn default_recommendations(&mut self) {
         let commands = self.completion.rec_list[COMMANDS];
-        self.completion.recomendations = commands.recs.as_ref().expect("commands is not empty")
+        self.completion.recommendations = commands.recs.as_ref().expect("commands is not empty")
             [..commands.unique_rec_end()]
             .to_vec();
-        self.completion.recomendations.push(HELP_STR);
+        self.completion.recommendations.push(HELP_STR);
     }
 
     /// Clears all state found by the completion module
@@ -1393,8 +1444,67 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             self.completion.input.ending = LineEnd::default();
             return;
         }
-        self.default_recomendations();
+        self.default_recommendations();
+        self.completion.ghost_text = None;
         self.completion.input = CompletionState::default();
         self.completion.indexer = Indexer::default();
+    }
+
+    pub(crate) fn update_ghost_text(&mut self) {
+        macro_rules! reset_and_return {
+            () => {
+                self.completion.ghost_text = None;
+                return
+            };
+        }
+
+        if !self.line.style_enabled || self.line.input.is_empty() {
+            reset_and_return!();
+        }
+
+        if let Some(ghost_text) = self
+            .history
+            .prev_entries
+            .iter()
+            .rev()
+            .find_map(|prev| prev.strip_prefix(self.input()))
+        {
+            self.completion.ghost_text = Some(String::from(ghost_text));
+            return;
+        }
+
+        let Some((recomendation, kind)) = self
+            .completion
+            .recommendations
+            .first()
+            .map(|&rec| (rec, &self.completion.rec_data_from_index(0).kind))
+        else {
+            reset_and_return!();
+        };
+
+        let Some(format_as_arg) = self.completion.arg_format(kind) else {
+            reset_and_return!();
+        };
+
+        let mut last_token = self
+            .input()
+            .rsplit_once(char::is_whitespace)
+            .map_or(self.input(), |(_, suf)| suf);
+
+        if last_token.is_empty() {
+            reset_and_return!();
+        }
+
+        if format_as_arg
+            && !last_token.strip_prefix("--").is_some_and(|token| {
+                last_token = token;
+                token.chars().next().is_some_and(char::is_alphabetic)
+            })
+            || !format_as_arg && last_token.starts_with('-')
+        {
+            reset_and_return!();
+        }
+
+        self.completion.ghost_text = recomendation.strip_prefix(last_token).map(String::from);
     }
 }

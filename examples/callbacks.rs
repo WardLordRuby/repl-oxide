@@ -14,7 +14,7 @@ use repl_oxide::{
 
 #[derive(Parser)]
 #[command(
-    name = "Example App",
+    name = "", // Leaving name empty will give us more accurate clap help and error messages
     about = "Example app demonstrating repl-oxide's callback types"
 )]
 enum Command {
@@ -24,7 +24,7 @@ enum Command {
 }
 
 // Our context can store all persistent state. Commands can also be implemented on our
-// context See 'examples/runner.rs'
+// context. See: 'examples/runner.rs'
 struct CommandContext;
 
 fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {

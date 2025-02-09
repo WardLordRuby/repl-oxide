@@ -13,7 +13,7 @@ where
     W: Write + Send + 'static,
 {
     // MARK: TODO
-    // create example for writing your own repl look with & without macros
+    // create example for writing your own repl without macros
 
     /// **Required Feature** = "spawner"
     ///
@@ -23,7 +23,7 @@ where
     /// Generally for advanced cases it is recomended to write your own read eval print loop over an
     /// [`EventStream`] this way will allow for deeper customization, make it easier to spot potential
     /// dead locks, and have all the same functionality `spawn` provides.
-    /// See example at: <EXAMPLE_NAME>
+    /// See: 'examples/basic_custom.rs' / <WITHOUT_MACRO>
     ///
     /// Avoid using `Ctx`'s whos fields contain `Arc<std::sync::Mutex<T>>` as it would be possible to run
     /// into dead locks if the repl thread tries to access the mutex at the same time as your own main

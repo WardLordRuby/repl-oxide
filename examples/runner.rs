@@ -13,7 +13,7 @@ use repl_oxide::{
 
 #[derive(Parser)]
 #[command(
-    name = "Example App",
+    name = "", // Leaving name empty will give us more accurate clap help and error messages
     about = "Example app showing repl-oxide's async and persistant state nature"
 )]
 enum Command {
