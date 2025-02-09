@@ -659,7 +659,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         if let Some(ghost_text) = self.completion.ghost_text.as_deref() {
             self.term
                 .queue(Print(format!("{DIM_WHITE}{ghost_text}{RESET}")))?;
-            self.move_to_beginning(line_len + ghost_text.chars().count() as u16)?;
+            self.move_to_beginning(line_len.saturating_sub(1) + ghost_text.chars().count() as u16)?;
         };
         self.move_to_end(line_len)?;
         self.term.queue(cursor::Show)?;
