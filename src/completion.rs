@@ -90,7 +90,7 @@ pub struct RecData {
     /// Recommendations followed by recomendation aliases
     recs: Option<&'static [&'static str]>,
     /// Kind of data stored
-    kind: RecKind,
+    pub(crate) kind: RecKind,
     /// Signals this is a leaf node
     end: bool,
 }
@@ -415,7 +415,6 @@ impl From<&'static CommandScheme> for Completion {
         recommendations.push(HELP_STR);
         Self {
             recommendations,
-            ghost_text: None,
             input: CompletionState::default(),
             rec_map,
             rec_list,
@@ -434,8 +433,7 @@ impl From<&'static CommandScheme> for Completion {
 /// indexes and lens  
 #[derive(Default)]
 pub struct Completion {
-    recommendations: Vec<&'static str>,
-    pub(crate) ghost_text: Option<String>,
+    pub(crate) recommendations: Vec<&'static str>,
     input: CompletionState,
     indexer: Indexer,
     rec_list: Vec<&'static RecData>,
@@ -700,7 +698,7 @@ impl Completion {
     /// in that case this method would be pointless to call since it does not have any `RecData`
     ///
     /// [`recommendation`]: Completion
-    fn rec_data_from_index(&self, recomendation_i: i8) -> &RecData {
+    pub(crate) fn rec_data_from_index(&self, recomendation_i: i8) -> &RecData {
         if !self.indexer.multiple {
             return self.rec_list[self.indexer.list.0];
         }
@@ -885,7 +883,7 @@ impl Completion {
     }
 
     /// Returns `true` if the given `kind` should be formatted as an argument
-    fn arg_format(&self, kind: &RecKind) -> Option<bool> {
+    pub(crate) fn arg_format(&self, kind: &RecKind) -> Option<bool> {
         match kind {
             RecKind::Argument(_) => Some(true),
             RecKind::Value(_) | RecKind::Command => Some(false),
@@ -1445,66 +1443,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             return;
         }
         self.default_recommendations();
-        self.completion.ghost_text = None;
         self.completion.input = CompletionState::default();
         self.completion.indexer = Indexer::default();
-    }
-
-    pub(crate) fn update_ghost_text(&mut self) {
-        macro_rules! reset_and_return {
-            () => {
-                self.completion.ghost_text = None;
-                return
-            };
-        }
-
-        if !self.line.style_enabled || self.line.input.is_empty() {
-            reset_and_return!();
-        }
-
-        if let Some(ghost_text) = self
-            .history
-            .prev_entries
-            .iter()
-            .rev()
-            .find_map(|prev| prev.strip_prefix(self.input()))
-        {
-            self.completion.ghost_text = Some(String::from(ghost_text));
-            return;
-        }
-
-        let Some((recomendation, kind)) = self
-            .completion
-            .recommendations
-            .first()
-            .map(|&rec| (rec, &self.completion.rec_data_from_index(0).kind))
-        else {
-            reset_and_return!();
-        };
-
-        let Some(format_as_arg) = self.completion.arg_format(kind) else {
-            reset_and_return!();
-        };
-
-        let mut last_token = self
-            .input()
-            .rsplit_once(char::is_whitespace)
-            .map_or(self.input(), |(_, suf)| suf);
-
-        if last_token.is_empty() {
-            reset_and_return!();
-        }
-
-        if format_as_arg
-            && !last_token.strip_prefix("--").is_some_and(|token| {
-                last_token = token;
-                token.chars().next().is_some_and(char::is_alphabetic)
-            })
-            || !format_as_arg && last_token.starts_with('-')
-        {
-            reset_and_return!();
-        }
-
-        self.completion.ghost_text = recomendation.strip_prefix(last_token).map(String::from);
     }
 }

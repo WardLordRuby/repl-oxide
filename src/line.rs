@@ -50,8 +50,9 @@ static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
 pub struct LineReader<Ctx, W: Write> {
     pub(crate) completion: Completion,
     pub(crate) line: LineData,
-    pub(crate) history: History,
-    pub(crate) term: W,
+    history: History,
+    ghost_text: Option<GhostTextMeta>,
+    term: W,
     /// (columns, rows)
     term_size: (u16, u16),
     uneventful: bool,
@@ -275,6 +276,12 @@ pub(crate) struct History {
     curr_index: usize,
 }
 
+#[derive(Clone, Copy)]
+enum GhostTextMeta {
+    History { i: usize },
+    Recomendation { len: usize },
+}
+
 // MARK: TODO
 // Add support for a movable cursor
 // currently `CompletionState` only supports char events at line end
@@ -389,6 +396,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         LineReader {
             line,
             history: History::default(),
+            ghost_text: None,
             term,
             term_size,
             uneventful: false,
@@ -649,22 +657,75 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         };
 
         let line_len = self.line_len();
+        let line_len_sub_1 = line_len.saturating_sub(1);
+
         if !self.cursor_at_start {
-            self.move_to_beginning(line_len.saturating_sub(1))?;
+            self.move_to_beginning(line_len_sub_1)?;
             self.term.queue(Clear(FromCursorDown))?;
         }
 
         self.term.queue(Print(&self.line))?;
-        self.update_ghost_text();
-        if let Some(ghost_text) = self.completion.ghost_text.as_deref() {
-            self.term
-                .queue(Print(format!("{DIM_WHITE}{ghost_text}{RESET}")))?;
-            self.move_to_beginning(line_len.saturating_sub(1) + ghost_text.chars().count() as u16)?;
-        };
+        self.render_ghost_text(line_len_sub_1)?;
+
         self.move_to_end(line_len)?;
         self.term.queue(cursor::Show)?;
 
         execute!(self.term, EndSynchronizedUpdate)
+    }
+
+    fn render_ghost_text(&mut self, line_len_sub_1: u16) -> io::Result<()> {
+        if !self.line.style_enabled || self.line.input.is_empty() {
+            self.ghost_text = None;
+            return Ok(());
+        }
+
+        let Some((ghost_text, meta)) = self
+            .history
+            .prev_entries
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(i, prev)| {
+                prev.strip_prefix(self.input())
+                    .map(|str| (str, GhostTextMeta::History { i }))
+            })
+            .or_else(|| {
+                let (recomendation, kind) = self
+                    .completion
+                    .recommendations
+                    .first()
+                    .map(|&rec| (rec, &self.completion.rec_data_from_index(0).kind))?;
+
+                let format_as_arg = self.completion.arg_format(kind)?;
+                let mut last_token = self
+                    .input()
+                    .rsplit_once(char::is_whitespace)
+                    .map_or(self.input(), |(_, suf)| suf);
+
+                if last_token.is_empty()
+                    || format_as_arg
+                        && !last_token.strip_prefix("--").is_some_and(|token| {
+                            last_token = token;
+                            token.chars().next().is_some_and(char::is_alphabetic)
+                        })
+                    || !format_as_arg && last_token.starts_with('-')
+                {
+                    return None;
+                }
+
+                recomendation
+                    .strip_prefix(last_token)
+                    .map(|str| (str, GhostTextMeta::Recomendation { len: str.len() }))
+            })
+        else {
+            self.ghost_text = None;
+            return Ok(());
+        };
+
+        self.ghost_text = Some(meta);
+        self.term
+            .queue(Print(format!("{DIM_WHITE}{ghost_text}{RESET}")))?;
+        self.move_to_beginning(line_len_sub_1 + ghost_text.chars().count() as u16)
     }
 
     /// Setting uneventul will skip the next call to `render`
@@ -736,6 +797,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.reset_history_idx();
         self.line.len = 0;
         self.line.err = false;
+        self.ghost_text = None;
         std::mem::take(&mut self.line.input)
     }
 
@@ -767,11 +829,22 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     }
 
     fn append_ghost_text(&mut self) -> io::Result<()> {
-        let Some(ghost_text) = self.completion.ghost_text.take() else {
+        let Some(meta) = self.ghost_text.take() else {
             self.set_uneventful();
             return Ok(());
         };
-        self.append_to_line(&ghost_text)?;
+
+        match meta {
+            GhostTextMeta::History { i } => {
+                self.change_line(self.history.prev_entries[i].clone())?
+            }
+            GhostTextMeta::Recomendation { len } => {
+                let rec_len = self.completion.recommendations[0].len();
+                let ghost_text = &self.completion.recommendations[0][rec_len - len..];
+                self.append_to_line(ghost_text)?;
+            }
+        }
+
         self.update_completeion();
         Ok(())
     }
