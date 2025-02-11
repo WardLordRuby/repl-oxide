@@ -8,6 +8,12 @@ use shellwords::split as shellwords_split;
 
 use std::io::{self, ErrorKind, Write};
 
+// static mut DEBUGGER: std::sync::OnceLock<std::fs::File> = std::sync::OnceLock::new();
+
+// pub(crate) fn get_debugger() -> &'static mut std::fs::File {
+//     unsafe { DEBUGGER.get_mut().unwrap() }
+// }
+
 /// Builder for custom REPL's
 ///
 /// Access through [`repl_builder`]
@@ -25,6 +31,25 @@ pub struct LineReaderBuilder<'a, W: Write> {
 ///
 /// `LineReader` must include a terminal that is compatable with executing commands via the `crossterm` crate.
 pub fn repl_builder<W: Write>(terminal: W) -> LineReaderBuilder<'static, W> {
+    /* -------------------------------- Debug tool -------------------------------- */
+    // let file = loop {
+    //     match std::fs::OpenOptions::new()
+    //         .write(true)
+    //         .open(r"\\.\pipe\debug_log")
+    //     {
+    //         Ok(file) => break file,
+    //         Err(_) => {
+    //             std::thread::sleep(std::time::Duration::from_millis(500));
+    //             continue;
+    //         }
+    //     }
+    // };
+
+    // unsafe {
+    //     DEBUGGER.set(file).unwrap();
+    // }
+    /* -------------------------------- Debug tool -------------------------------- */
+
     LineReaderBuilder {
         completion: None,
         custom_quit: None,

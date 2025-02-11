@@ -5,6 +5,8 @@ use std::{
     ops::Range,
 };
 
+// use crate::get_debugger;
+
 pub const ROOT: &str = "ROOT";
 const UNIVERSAL: &str = "ANY";
 const HELP_STR: &str = "help";
@@ -882,7 +884,8 @@ impl Completion {
         }
     }
 
-    /// Returns `true` if the given `kind` should be formatted as an argument
+    /// Returns `Some(true)` or `Some(false)` if the given `kind` should be formatted as an argument or  
+    /// `None` if there is no applicable formatting. eg. `RecKind::UserDefined` or `RecKind::Null`
     pub(crate) fn arg_format(&self, kind: &RecKind) -> Option<bool> {
         match kind {
             RecKind::Argument(_) => Some(true),
@@ -1201,7 +1204,12 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             }
         }
 
-        // eprintln!("{}", self.completion.input.debug(line_trim_start));
+        // writeln!(
+        //     get_debugger(),
+        //     "{}",
+        //     self.completion.input.debug(line_trim_start)
+        // )
+        // .unwrap();
 
         self.completion.indexer.list = match (
             self.completion.curr_command(),
@@ -1299,32 +1307,23 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
     /// Changes the current user input to either `Next` or `Previous` suggestion depending on the given direction
     pub fn try_completion(&mut self, direction: Direction) -> io::Result<()> {
-        if !self.line.comp_enabled || self.completion.recommendations.is_empty() {
+        if !self.line.comp_enabled
+            || self.completion.recommendations.is_empty()
+            || self.completion.recommendations.len() == 1
+                && match self.completion.rec_data_from_index(0).kind {
+                    RecKind::Value(_) => {
+                        self.curr_token() == self.completion.recommendations[0]
+                            && self.curr_token() != HELP_STR
+                    }
+                    RecKind::Argument(_) => self
+                        .curr_token()
+                        .strip_prefix("--")
+                        .is_some_and(|user_input| user_input == self.completion.recommendations[0]),
+                    _ => self.curr_token() == self.completion.recommendations[0],
+                }
+        {
+            self.set_uneventful();
             return Ok(());
-        }
-
-        if self.completion.recommendations.len() == 1 {
-            match self.completion.rec_data_from_index(0).kind {
-                RecKind::Value(_) => {
-                    if self.curr_token() == self.completion.recommendations[0]
-                        && self.curr_token() != HELP_STR
-                    {
-                        return Ok(());
-                    }
-                }
-                RecKind::Argument(_) => {
-                    if let Some(user_input) = self.curr_token().strip_prefix("--") {
-                        if user_input == self.completion.recommendations[0] {
-                            return Ok(());
-                        }
-                    }
-                }
-                _ => {
-                    if self.curr_token() == self.completion.recommendations[0] {
-                        return Ok(());
-                    }
-                }
-            }
         }
 
         let recomendation = loop {
@@ -1424,7 +1423,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             ),
         );
 
-        self.change_line(new_line)
+        self.change_line_raw(new_line)
     }
 
     fn default_recommendations(&mut self) {

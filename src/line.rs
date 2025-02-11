@@ -416,7 +416,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         &mut self,
         stream: &mut crossterm::event::EventStream,
     ) -> io::Result<()> {
-        if !std::mem::take(&mut self.command_entered) {
+        if !self.command_entered {
             return Ok(());
         }
 
@@ -598,6 +598,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.line.input.push_str(new);
         self.line.len += new.chars().count() as u16;
         self.move_to_end(self.line_len())?;
+        self.update_completeion();
         Ok(())
     }
 
@@ -634,7 +635,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             self.term.queue(Print(NEW_LINE))?;
         }
         let line_height = self.line_height(line_len);
-        if line_height != 0 {
+        if line_height != 0 && self.ghost_text.is_some() {
             self.term.queue(cursor::MoveDown(line_height))?;
         }
         self.term.queue(cursor::MoveToColumn(line_remaining_len))?;
@@ -652,6 +653,17 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         if std::mem::take(&mut self.uneventful) {
             return Ok(());
         }
+
+        if std::mem::take(&mut self.command_entered) {
+            // We can not use the `position` command on UNIX
+            // It will have to be clear to unix/cross-platform users that they will be requred
+            // to always use the staging solution for printing any messages to the console
+            #[cfg(windows)]
+            {
+                self.cursor_at_start = cursor::position()?.0 == 0;
+            }
+        }
+
         if let Some(res) = self.try_init_input_hook() {
             res?
         };
@@ -679,6 +691,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             return Ok(());
         }
 
+        // Render is only ran if the input state has changed, so lets try to update ghost text
         let Some((ghost_text, meta)) = self
             .history
             .prev_entries
@@ -806,8 +819,16 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.history.curr_index = self.history.prev_entries.len();
     }
 
-    /// Does not support ansi codes within the input `line`
-    pub(crate) fn change_line(&mut self, line: String) -> io::Result<()> {
+    /// Changes the currently displayed user input to the given `line`
+    pub fn change_line(&mut self, line: String) -> io::Result<()> {
+        self.change_line_raw(line)?;
+        self.reset_completion();
+        self.update_completeion();
+        Ok(())
+    }
+
+    /// For internal use when we **know** that we want to keep the same completion state
+    pub(crate) fn change_line_raw(&mut self, line: String) -> io::Result<()> {
         self.move_to_beginning(self.line_len())?;
         self.term.queue(Clear(FromCursorDown))?;
         self.line.len = line.chars().count() as u16;
@@ -845,7 +866,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             }
         }
 
-        self.update_completeion();
         Ok(())
     }
 
