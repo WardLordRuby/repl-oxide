@@ -42,7 +42,7 @@ enum Command {
 #[derive(Args)]
 struct EchoArgs {
     /// Required string to echo
-    input: String,
+    string: String,
 
     /// Specify what case the input string should display as
     #[arg(long, short, value_enum)]
@@ -209,17 +209,17 @@ impl CommandContext {
 
     fn echo(mut args: EchoArgs) -> io::Result<OurCommandHandle> {
         if args.reverse {
-            args.input = args.input.chars().rev().collect()
+            args.string = args.string.chars().rev().collect()
         }
 
         if let Some(case_option) = args.case {
-            args.input = match case_option {
-                CaseOptions::Lower => args.input.to_lowercase(),
-                CaseOptions::Upper => args.input.to_uppercase(),
+            args.string = match case_option {
+                CaseOptions::Lower => args.string.to_lowercase(),
+                CaseOptions::Upper => args.string.to_uppercase(),
             }
         }
 
-        println!("{}", args.input);
+        println!("{}", args.string);
         Ok(CommandHandle::Processed)
     }
 }

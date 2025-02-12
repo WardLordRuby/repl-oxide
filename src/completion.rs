@@ -297,6 +297,16 @@ pub enum Direction {
     Previous,
 }
 
+impl Direction {
+    #[inline]
+    fn to_int(&self) -> i8 {
+        match self {
+            Direction::Next => 1,
+            Direction::Previous => -1,
+        }
+    }
+}
+
 impl From<&'static CommandScheme> for Completion {
     fn from(value: &'static CommandScheme) -> Self {
         fn insert_rec_set(
@@ -690,9 +700,6 @@ impl Completion {
     pub(crate) fn is_empty(&self) -> bool {
         self.rec_list.is_empty()
     }
-
-    // MARK: TODO
-    // add documentation on all "unchecked" functions on what needs to be gaurenteed by the caller
 
     /// Aquires the [`RecData`] of any [`recommendation`] via its index
     ///
@@ -1327,10 +1334,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         }
 
         let recomendation = loop {
-            self.completion.indexer.recs += match direction {
-                Direction::Next => 1,
-                Direction::Previous => -1,
-            };
+            self.completion.indexer.recs += direction.to_int();
 
             match self.completion.indexer.recs {
                 i if i >= USER_INPUT && i < self.completion.recommendations.len() as i8 => (),
@@ -1345,75 +1349,63 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             } else {
                 let next = self.completion.recommendations[self.completion.indexer.recs as usize];
                 // Saftey: can call into `rec_data_from_unchecked` since we guard against the unsafe input above
-                match self
+                if match self
                     .completion
                     .rec_data_from_index(self.completion.indexer.recs)
                     .kind
                 {
-                    RecKind::Value(_) => {
-                        if self.curr_token() != next || self.curr_token() == HELP_STR {
-                            break next;
-                        }
-                    }
-                    RecKind::Argument(_) => {
-                        if let Some(user_input) = self.curr_token().strip_prefix("--") {
-                            if user_input == next {
-                                continue;
-                            }
-                        }
-                        break next;
-                    }
-                    _ => {
-                        if self.curr_token() != next {
-                            break next;
-                        }
-                    }
+                    RecKind::Value(_) => self.curr_token() != next || self.curr_token() == HELP_STR,
+                    RecKind::Argument(_) => !self
+                        .curr_token()
+                        .strip_prefix("--")
+                        .is_some_and(|user_input| user_input == next),
+                    _ => self.curr_token() != next,
+                } {
+                    break next;
                 }
             };
         };
 
-        let new_line = {
-            let format_line = |rec_is_arg: bool| -> String {
-                self.line
-                    .input
-                    .rsplit_once(char::is_whitespace)
-                    .map_or_else(
-                        || recomendation.to_string(),
-                        |(pre, _)| {
-                            format!(
-                                "{pre} {}{recomendation}",
-                                if rec_is_arg
-                                    && !recomendation.is_empty()
-                                    && self.completion.indexer.recs != USER_INPUT
-                                {
-                                    "--"
-                                } else {
-                                    ""
-                                }
-                            )
-                        },
-                    )
-            };
-
-            let kind = if recomendation == HELP_STR {
-                &self.completion.rec_list[HELP].kind
-            } else if self.completion.indexer.recs == USER_INPUT {
-                // Set as `Command` because we do not need aditional formatting below in the `USER_INPUT` case
-                &RecKind::Command
-            } else {
-                // Saftey: can call into `rec_data_from_unchecked` since we guard against the unsafe input above
-                &self
-                    .completion
-                    .rec_data_from_index(self.completion.indexer.recs)
-                    .kind
-            };
-
-            format_line(
-                self.completion
-                    .arg_format(kind)
-                    .expect("guard clause covers `UserInput` and `Null`"),
-            )
+        let format_line = |rec_is_arg| {
+            self.line
+                .input
+                .rsplit_once(char::is_whitespace)
+                .map_or_else(
+                    || recomendation.to_string(),
+                    |(pre, _)| {
+                        format!(
+                            "{pre} {}{recomendation}",
+                            if rec_is_arg
+                                && !recomendation.is_empty()
+                                && self.completion.indexer.recs != USER_INPUT
+                            {
+                                "--"
+                            } else {
+                                ""
+                            }
+                        )
+                    },
+                )
         };
+
+        let kind = if recomendation == HELP_STR {
+            &self.completion.rec_list[HELP].kind
+        } else if self.completion.indexer.recs == USER_INPUT {
+            // Set as `Command` because we do not need aditional formatting below in the `USER_INPUT` case
+            &RecKind::Command
+        } else {
+            // Saftey: can call into `rec_data_from_unchecked` since we guard against the unsafe input above
+            &self
+                .completion
+                .rec_data_from_index(self.completion.indexer.recs)
+                .kind
+        };
+
+        let new_line = format_line(
+            self.completion
+                .arg_format(kind)
+                .expect("guard clause covers `UserInput` and `Null`"),
+        );
 
         self.line.found_err(
             self.check_value_err(
