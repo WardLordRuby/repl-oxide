@@ -1097,12 +1097,11 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                     !starting_token.exact_eq(self.completion.curr_command().expect("outer if"))
                         && match self.completion.rec_list[starting_token.hash_i].kind {
                             RecKind::UserDefined(_) if nvals == 0 => true,
-                            RecKind::Value(ref c) if nvals > 0 && c.contains(&(nvals + 1)) => {
-                                self.completion.indexer.multiple = true;
+                            RecKind::Value(ref c) if c.contains(&(nvals + 1)) => {
+                                self.completion.indexer.multiple = nvals > 0;
                                 true
                             }
-                            _ if self.completion.rec_list[starting_token.hash_i].end => true,
-                            _ => false,
+                            _ => self.completion.rec_list[starting_token.hash_i].end,
                         }
                 })
             };
