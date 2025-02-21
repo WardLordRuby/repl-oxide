@@ -530,6 +530,16 @@ impl SliceData {
     fn exact_eq(&self, other: &Self) -> bool {
         self == other && self.hash_i == other.hash_i
     }
+
+    /* -------------------------------- Debug tool --------------------------------------- */
+    // fn display(&self, line_trim_start: &str) -> String {
+    //     format!(
+    //         "slice: '{}', hash_i: {}",
+    //         self.to_slice_unchecked(line_trim_start),
+    //         self.hash_i
+    //     )
+    // }
+    /* ----------------------------------------------------------------------------------- */
 }
 
 #[derive(Default, Debug)]
@@ -622,13 +632,7 @@ impl CompletionState {
     }
     /* -------------------------------- Debug tool --------------------------------------- */
     // fn debug(&self, line: &str) -> String {
-    //     let inner_fmt = |slice_data: &SliceData| -> String {
-    //         format!(
-    //             "'{}' hash_i: {}",
-    //             slice_data.to_slice_unchecked(line),
-    //             slice_data.hash_i
-    //         )
-    //     };
+    //     let inner_fmt = |slice_data: &SliceData| -> String { slice_data.display(line) };
 
     //     let mut output = String::new();
     //     output.push_str(&format!(
@@ -773,15 +777,13 @@ impl Completion {
                 let quote = line_trim_end.chars().next_back().expect("outer if");
                 line_trim_end[..line_trim_end.len() - quote.len_utf8()].rfind(quote)
             } else {
-                let mut last = 0;
-                let mut chars = line_trim_end.char_indices();
-                while let Some((i, ch)) = chars.next_back() {
-                    if ch.is_whitespace() {
-                        break;
-                    }
-                    last = i
-                }
-                Some(last)
+                Some(
+                    line_trim_end
+                        .char_indices()
+                        .rev()
+                        .find_map(|(i, ch)| ch.is_whitespace().then(|| i + ch.len_utf8()))
+                        .unwrap_or_default(),
+                )
             };
             if let Some(byte_start) = start {
                 let len = line_trim_end.len() - byte_start;
@@ -832,18 +834,20 @@ impl Completion {
             return;
         }
         let mut option = None;
-        let hash_str = command_str.chars().next().map_or(command_str, |c| {
-            if c.is_uppercase() {
+        let hash_str = command_str
+            .chars()
+            .next()
+            .filter(|c| c.is_uppercase())
+            .map(|c| {
                 option = Some(format!(
                     "{}{}",
-                    c.to_lowercase(),
+                    c.to_ascii_lowercase(),
                     &command_str[c.len_utf8()..]
                 ));
-                option.as_ref().unwrap()
-            } else {
-                command_str
-            }
-        });
+                option.as_deref().unwrap()
+            })
+            .unwrap_or(command_str);
+
         if let Some(&i) = self.rec_map.get(hash_str) {
             if let Some(parent) = self.rec_list[i].parent {
                 if parent == ROOT || parent == UNIVERSAL {
@@ -867,7 +871,9 @@ impl Completion {
         let arg_str = arg_str.trim_start_matches('-');
         if let Some(&i) = self.rec_map.get(arg_str) {
             if let Some(parent) = self.rec_list[i].parent {
-                if parent == command || parent == UNIVERSAL {
+                // `hash_command_unchecked` _only_ provides case leeway for 'Title case' commands
+                // making it fine to ignore all case here
+                if parent.eq_ignore_ascii_case(command) || parent == UNIVERSAL {
                     arg.hash_i = i;
                 }
             }
@@ -983,7 +989,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         ));
     }
 
-    fn try_take_forward_arg_or_val(
+    fn try_get_forward_arg_or_val(
         &self,
         line_trim_start: &str,
         command_kind: &RecKind,
@@ -1095,7 +1101,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 .kind;
 
             let mut new = if last_key_trim.ends_with(char::is_whitespace) {
-                self.try_take_forward_arg_or_val(line_trim_start, command_kind)
+                self.try_get_forward_arg_or_val(line_trim_start, command_kind)
             } else {
                 // make sure we set prev arg when backspacing
                 let (kind_match, nvals) = self.completion.count_vals_in_slice(
