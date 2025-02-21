@@ -57,7 +57,7 @@ struct EchoArgs {
 enum CaseOptions {
     #[value(alias = "Lower")]
     Lower,
-    #[value(alias = "Uower")]
+    #[value(alias = "Upper")]
     Upper,
 }
 

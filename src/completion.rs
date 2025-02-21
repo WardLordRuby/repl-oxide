@@ -53,9 +53,10 @@ pub struct CommandScheme {
 }
 
 // MARK: TODO
-// Add support for recursive commands
-// currently we only support commands that only take one command as a clap value enum
-// we should be able to have interior commands still have args/flags ect..
+// 1. Ensure "--help" gets added for all commands
+// 2. Add support for recursive commands
+//    currently we only support commands that only take one command as a clap value enum
+//    we should be able to have interior commands still have args/flags ect..
 
 /// Tree node of [`CommandScheme`]
 ///
@@ -86,27 +87,17 @@ pub struct RecData {
     /// Name of the parent entry
     parent: Option<&'static str>,
     /// Required data if this node contains any aliases
-    alias: Option<AliasData>,
+    // Index of rec in `recs` -> index of alias in `recs`
+    alias: Option<&'static [(usize, usize)]>,
     /// Required data if containing recs support a short arg syntax
-    short: Option<ShortData>,
+    short: Option<&'static [(usize, &'static str)]>,
     /// Recommendations followed by recomendation aliases
+    // Index of rec in `recs` -> short char
     recs: Option<&'static [&'static str]>,
     /// Kind of data stored
     pub(crate) kind: RecKind,
     /// Signals this is a leaf node
     end: bool,
-}
-
-#[derive(PartialEq, Eq, Debug)]
-struct AliasData {
-    /// Index of rec in `recs` -> index of alias in `recs`
-    rec_mapping: &'static [(usize, usize)],
-}
-
-#[derive(PartialEq, Eq, Debug)]
-struct ShortData {
-    /// Index of rec in `recs` -> short char
-    short_mapping: &'static [(usize, &'static str)],
 }
 
 impl CommandScheme {
@@ -180,20 +171,8 @@ impl RecData {
     ) -> Self {
         Self {
             parent,
-            alias: if let Some(mapping) = alias {
-                Some(AliasData {
-                    rec_mapping: mapping,
-                })
-            } else {
-                None
-            },
-            short: if let Some(mapping) = short {
-                Some(ShortData {
-                    short_mapping: mapping,
-                })
-            } else {
-                None
-            },
+            alias,
+            short,
             recs,
             kind,
             end,
@@ -207,13 +186,7 @@ impl RecData {
     ) -> Self {
         Self {
             parent: None,
-            alias: if let Some(mapping) = alias {
-                Some(AliasData {
-                    rec_mapping: mapping,
-                })
-            } else {
-                None
-            },
+            alias,
             short: None,
             recs,
             kind: RecKind::Command,
@@ -245,14 +218,14 @@ impl RecData {
 
     #[inline]
     fn rec_len(&self) -> usize {
-        self.recs.map_or(0, |recs| recs.len())
+        self.recs.map(|recs| recs.len()).unwrap_or_default()
     }
 
     fn unique_rec_end(&self) -> usize {
         let len = self.rec_len();
         self.alias
             .as_ref()
-            .map_or(len, |data| len - data.rec_mapping.len())
+            .map_or(len, |&short_mapping| len - short_mapping.len())
     }
 }
 
@@ -309,15 +282,6 @@ impl Direction {
 
 impl From<&'static CommandScheme> for Completion {
     fn from(value: &'static CommandScheme) -> Self {
-        fn insert_rec_set(
-            map: &mut HashMap<usize, HashSet<&'static str>>,
-            recs: &[&'static str],
-            at: usize,
-        ) {
-            assert!(map
-                .insert(at, HashSet::from_iter(recs.iter().copied()))
-                .is_none())
-        }
         fn insert_index(
             map: &mut HashMap<&'static str, usize>,
             key: &'static str,
@@ -332,6 +296,47 @@ impl From<&'static CommandScheme> for Completion {
                 },
                 "duplicate recomendation entries _must_ have identical nodes"
             );
+        }
+        fn try_insert_rec_set(
+            kind: &RecKind,
+            map: &mut HashMap<usize, HashSet<&'static str>>,
+            recs: Option<&'static [&'static str]>,
+            at: usize,
+        ) {
+            if let RecKind::Value(_) = kind {
+                assert!(map
+                    .insert(
+                        at,
+                        HashSet::from_iter(
+                            recs.expect("`RecKind::Value` specified but no pre-determined values were supplied")
+                                .iter()
+                                .copied()
+                        )
+                    )
+                    .is_none())
+            }
+        }
+        fn try_insert_aliases(
+            map: &mut HashMap<&'static str, usize>,
+            val: usize,
+            data: &'static RecData,
+            list: &[&'static RecData],
+            mapping: Option<&'static [(usize, usize)]>,
+            recs: Option<&'static [&'static str]>,
+            target: usize,
+        ) {
+            if let Some(rec_mapping) = mapping {
+                rec_mapping
+                    .iter()
+                    .filter(|(rec_i, _)| *rec_i == target)
+                    .map(|&(_, alias_i)| {
+                        recs.expect("tried to set alias when no recomendations were supplied")
+                            [alias_i]
+                    })
+                    .for_each(|alias| {
+                        insert_index(map, alias, val, data, list);
+                    });
+            }
         }
 
         fn walk_inner(
@@ -349,43 +354,46 @@ impl From<&'static CommandScheme> for Completion {
                     ..
                 } => {
                     let expected_len = inner.data.unique_rec_end();
-                    assert_eq!(expected_len, inner.inner.unwrap().len());
+                    let inner_inner = inner.inner.expect("inner elements not described");
+                    assert_eq!(
+                        expected_len,
+                        inner_inner.len(),
+                        "invalid number of inner element discriptions"
+                    );
                     for (i, (&argument, inner)) in recs
                         .expect("is some")
                         .iter()
-                        .zip(inner.inner.expect("is some"))
+                        .zip(inner_inner)
                         .enumerate()
                         .take(expected_len)
                     {
                         list.push(&inner.data);
                         let l_i = list.len() - 1;
                         insert_index(map, argument, l_i, &inner.data, list);
-                        if let Some(data) = short {
-                            if let Some(&(_, short)) =
-                                data.short_mapping.iter().find(|(map_i, _)| *map_i == i)
-                            {
-                                assert_ne!(short, HELP_SHORT, "the use of 'h' is not allowed, short arg '-h' is reserved for 'help'");
-                                insert_index(map, short, l_i, &inner.data, list);
-                            }
+                        if let Some(&(_, short_ch)) = short.and_then(|short_mapping| {
+                            short_mapping.iter().find(|(map_i, _)| *map_i == i)
+                        }) {
+                            assert_ne!(short_ch, HELP_SHORT, "the use of 'h' is not allowed, short arg '-h' is reserved for 'help'");
+                            assert!(
+                                short_ch.chars().count() == 1,
+                                "Short: {short_ch}, is not a valid short format"
+                            );
+                            insert_index(map, short_ch, l_i, &inner.data, list);
                         }
-                        if let Some(data) = alias {
-                            data.rec_mapping
-                                .iter()
-                                .filter(|(rec_i, _)| *rec_i == i)
-                                .map(|&(_, alias_i)| recs.expect("is some")[alias_i])
-                                .for_each(|alias| {
-                                    insert_index(map, alias, l_i, &inner.data, list);
-                                });
-                        }
-                        if let RecKind::Value(_) = inner.data.kind {
-                            insert_rec_set(value_sets, inner.data.recs.expect("is some"), l_i);
-                        }
+                        try_insert_aliases(map, l_i, &inner.data, list, *alias, *recs, i);
+                        try_insert_rec_set(&inner.data.kind, value_sets, inner.data.recs, l_i);
                         walk_inner(inner, list, map, value_sets);
                     }
                 }
                 _ => {
-                    assert!(inner.inner.is_none());
-                    assert!(inner.data.short.is_none());
+                    assert!(
+                        inner.inner.is_none(),
+                        "currently it is only valid to provide inner discriptions for arguments"
+                    );
+                    assert!(
+                        inner.data.short.is_none(),
+                        "shorts are only supported for arguments"
+                    );
                 }
             }
         }
@@ -409,21 +417,23 @@ impl From<&'static CommandScheme> for Completion {
             rec_list.push(&inner.data);
             let l_i = rec_list.len() - 1;
             insert_index(&mut rec_map, command, l_i, &inner.data, &rec_list);
-            if let Some(ref data) = value.commands.alias {
-                data.rec_mapping
-                    .iter()
-                    .filter(|(rec_i, _)| *rec_i == i)
-                    .map(|&(_, alias_i)| value.commands.recs.expect("is some")[alias_i])
-                    .for_each(|alias| {
-                        insert_index(&mut rec_map, alias, l_i, &inner.data, &rec_list);
-                    });
-            }
-            if let RecKind::Value(_) = inner.data.kind {
-                insert_rec_set(&mut value_sets, inner.data.recs.expect("is some"), l_i);
-            }
+            try_insert_aliases(
+                &mut rec_map,
+                l_i,
+                &inner.data,
+                &rec_list,
+                value.commands.alias,
+                value.commands.recs,
+                i,
+            );
+            try_insert_rec_set(&inner.data.kind, &mut value_sets, inner.data.recs, l_i);
             walk_inner(inner, &mut rec_list, &mut rec_map, &mut value_sets);
         }
-        let mut recommendations = value.commands.recs.expect("is some")[..expected_len].to_vec();
+        let mut recommendations = value
+            .commands
+            .recs
+            .expect("`CommandScheme` supplied with no recomendations")[..expected_len]
+            .to_vec();
         recommendations.push(HELP_STR);
         Self {
             recommendations,
@@ -973,6 +983,42 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         ));
     }
 
+    fn try_take_forward_arg_or_val(
+        &self,
+        line_trim_start: &str,
+        command_kind: &RecKind,
+    ) -> Option<SliceData> {
+        let (kind_match, nvals) = self
+            .completion
+            .count_vals_in_slice(line_trim_start, command_kind);
+
+        let take_end = if let Some(ref starting_token) = kind_match {
+            let start_token_meta = self.completion.rec_list[starting_token.hash_i];
+
+            if starting_token.hash_i == INVALID || nvals == 0 {
+                return kind_match;
+            }
+
+            match start_token_meta {
+                RecData {
+                    kind: RecKind::Value(ref r) | RecKind::UserDefined(ref r),
+                    end: false,
+                    ..
+                } => !r.contains(&nvals),
+                _ => true,
+            }
+        } else {
+            true
+        };
+
+        take_end
+            .then(|| {
+                self.completion
+                    .try_parse_token_from_end(line_trim_start, command_kind, Some(nvals))
+            })
+            .flatten()
+    }
+
     /// Updates the suggestions for the current user input
     pub fn update_completeion(&mut self) {
         let line_trim_start = self.line.input.trim_start();
@@ -1049,43 +1095,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 .kind;
 
             let mut new = if last_key_trim.ends_with(char::is_whitespace) {
-                let mut take_end = true;
-                let mut new = None;
-
-                let (kind_match, nvals) = self
-                    .completion
-                    .count_vals_in_slice(line_trim_start, command_kind);
-
-                if let Some(ref starting_token) = kind_match {
-                    let start_token_meta = self.completion.rec_list[starting_token.hash_i];
-                    if starting_token.hash_i == INVALID || nvals == 0 {
-                        new = kind_match;
-                        take_end = false;
-                    } else if let RecData {
-                        kind: RecKind::Value(ref r),
-                        end: false,
-                        ..
-                    }
-                    | RecData {
-                        kind: RecKind::UserDefined(ref r),
-                        end: false,
-                        ..
-                    } = start_token_meta
-                    {
-                        if r.contains(&nvals) {
-                            take_end = false;
-                        }
-                    }
-                }
-
-                if take_end {
-                    new = self.completion.try_parse_token_from_end(
-                        line_trim_start,
-                        command_kind,
-                        Some(nvals),
-                    );
-                }
-                new
+                self.try_take_forward_arg_or_val(line_trim_start, command_kind)
             } else {
                 // make sure we set prev arg when backspacing
                 let (kind_match, nvals) = self.completion.count_vals_in_slice(
@@ -1098,7 +1108,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                         && match self.completion.rec_list[starting_token.hash_i].kind {
                             RecKind::UserDefined(_) if nvals == 0 => true,
                             RecKind::Value(ref c) if c.contains(&(nvals + 1)) => {
-                                self.completion.indexer.multiple = nvals > 0;
+                                self.completion.indexer.multiple = nvals >= c.start;
                                 true
                             }
                             _ => self.completion.rec_list[starting_token.hash_i].end,

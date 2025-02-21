@@ -8,11 +8,33 @@ use shellwords::split as shellwords_split;
 
 use std::io::{self, ErrorKind, Write};
 
+/* -------------------------------- Debug tool -------------------------------- */
 // static mut DEBUGGER: std::sync::OnceLock<std::fs::File> = std::sync::OnceLock::new();
 
 // pub(crate) fn get_debugger() -> &'static mut std::fs::File {
-//     unsafe { DEBUGGER.get_mut().unwrap() }
+//     #[allow(static_mut_refs)]
+//     unsafe {
+//         DEBUGGER.get_mut().unwrap()
+//     }
 // }
+
+// fn await_debug_server(n_pipe: &str) {
+//     let file = loop {
+//         match std::fs::OpenOptions::new().write(true).open(n_pipe) {
+//             Ok(file) => break file,
+//             Err(_) => {
+//                 std::thread::sleep(std::time::Duration::from_millis(500));
+//                 continue;
+//             }
+//         }
+//     };
+
+//     #[allow(static_mut_refs)]
+//     unsafe {
+//         DEBUGGER.set(file).unwrap();
+//     }
+// }
+/* -------------------------------- Debug tool -------------------------------- */
 
 /// Builder for custom REPL's
 ///
@@ -31,24 +53,7 @@ pub struct LineReaderBuilder<'a, W: Write> {
 ///
 /// `LineReader` must include a terminal that is compatable with executing commands via the `crossterm` crate.
 pub fn repl_builder<W: Write>(terminal: W) -> LineReaderBuilder<'static, W> {
-    /* -------------------------------- Debug tool -------------------------------- */
-    // let file = loop {
-    //     match std::fs::OpenOptions::new()
-    //         .write(true)
-    //         .open(r"\\.\pipe\debug_log")
-    //     {
-    //         Ok(file) => break file,
-    //         Err(_) => {
-    //             std::thread::sleep(std::time::Duration::from_millis(500));
-    //             continue;
-    //         }
-    //     }
-    // };
-
-    // unsafe {
-    //     DEBUGGER.set(file).unwrap();
-    // }
-    /* -------------------------------- Debug tool -------------------------------- */
+    // await_debug_server(r"\\.\pipe\debug_log");
 
     LineReaderBuilder {
         completion: None,
