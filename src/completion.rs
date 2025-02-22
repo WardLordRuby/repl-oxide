@@ -7,8 +7,10 @@ use std::{
 
 // use crate::get_debugger;
 
+// const `split_at` (UNSTABLE)
 const HELP_STR: &str = "help";
 const HELP_SHORT: &str = "h";
+
 const HELP_ARG: &str = "--help";
 const HELP_ARG_SHORT: &str = "-h";
 
@@ -51,7 +53,7 @@ pub struct CommandScheme {
 }
 
 // MARK: TODO
-// 1. Ensure "--help" gets added for all commands
+// 1. Prototype user experience with builder? (`str::trim_ascii`(1.80) && `str::make_ascii_lowercase`(1.84) are const methods)
 // 2. Add support for recursive commands
 //    currently we only support commands that only take one command as a clap value enum
 //    we should be able to have interior commands still have args/flags ect..
@@ -80,7 +82,7 @@ pub struct InnerScheme {
     inner: Option<&'static [Self]>,
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct RecData {
     /// Name of the parent entry
     parent: Option<Parent>,
@@ -234,7 +236,7 @@ impl RecData {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum RecKind {
     Command,
     Argument(usize),
@@ -637,7 +639,7 @@ impl CompletionState {
     }
     /* -------------------------------- Debug tool --------------------------------------- */
     // fn debug(&self, line: &str) -> String {
-    //     let inner_fmt = |slice_data: &SliceData| -> String { slice_data.display(line) };
+    //     let inner_fmt = |slice_data: &SliceData| slice_data.display(line);
 
     //     let mut output = String::new();
     //     output.push_str(&format!(
@@ -890,7 +892,7 @@ impl Completion {
     fn hash_value_unchecked(
         &self,
         line: &str,
-        arg: &mut SliceData,
+        value: &mut SliceData,
         range: &Range<usize>,
         count: usize,
     ) {
@@ -898,7 +900,7 @@ impl Completion {
             return;
         }
 
-        let val_str = arg.to_slice_unchecked(line);
+        let val_str = value.to_slice_unchecked(line);
         if val_str.starts_with('-') {
             return;
         }
@@ -908,7 +910,7 @@ impl Completion {
             .expect("can only set value if cmd or arg is some");
 
         if self.value_valid(val_str, parent.hash_i) {
-            arg.hash_i = VALID;
+            value.hash_i = VALID;
         }
     }
 
@@ -1320,12 +1322,12 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
         if self.completion.indexer.multiple {
             if let Some(recs2) = rec_data_2.recs {
-                self.completion.indexer.in_list_2.clear();
-                for (i, rec) in recommendations.iter().enumerate() {
-                    if recs2.contains(rec) {
-                        self.completion.indexer.in_list_2.push(i as i8);
-                    }
-                }
+                self.completion.indexer.in_list_2 = recommendations
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, rec)| recs2.contains(rec))
+                    .map(|(i, _)| i as i8)
+                    .collect();
             }
         }
 
