@@ -1034,11 +1034,15 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
     /// Updates the suggestions for the current user input
     pub fn update_completeion(&mut self) {
+        if !self.line.comp_enabled {
+            return;
+        }
+
         let line_trim_start = self.line.input.trim_start();
         if line_trim_start.is_empty() {
-            if !self.completion.is_empty() {
-                self.default_recommendations();
-            }
+            // `comp_enabled` can only be set when `!Completion.is_empty()` via checks in `enable_completion` and
+            // `LineReaderBuilder::build`. Making it safe to call `default_recomendations` here
+            self.default_recommendations_unchecked();
             self.line.err = false;
             self.completion.input.ending = LineEnd::default();
             return;
@@ -1440,7 +1444,8 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.change_line_raw(new_line)
     }
 
-    fn default_recommendations(&mut self) {
+    /// Will panic if `self.completion.is_empty()`
+    fn default_recommendations_unchecked(&mut self) {
         let commands = self.completion.rec_list[COMMANDS];
         self.completion.recommendations = commands.recs.as_ref().expect("commands is not empty")
             [..commands.unique_rec_end()]
@@ -1455,7 +1460,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             self.completion.input.ending = LineEnd::default();
             return;
         }
-        self.default_recommendations();
+        self.default_recommendations_unchecked();
         self.completion.input = CompletionState::default();
         self.completion.indexer = Indexer::default();
     }

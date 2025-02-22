@@ -757,9 +757,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     pub fn insert_char(&mut self, c: char) {
         self.line.input.push(c);
         self.line.len = self.line.len.saturating_add(1);
-        if self.line.comp_enabled {
-            self.update_completeion();
-        }
+        self.update_completeion();
     }
 
     /// Pops a char from the input line and tries to update suggestions if completion is enabled
@@ -768,9 +766,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.move_to_beginning(self.line_len())?;
         self.term.queue(Clear(FromCursorDown))?;
         self.line.len = self.line.len.saturating_sub(1);
-        if self.line.comp_enabled {
-            self.update_completeion();
-        }
+        self.update_completeion();
         Ok(())
     }
 
