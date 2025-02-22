@@ -7,7 +7,7 @@ use clap::{value_parser, Args, CommandFactory, Parser, ValueEnum};
 use rand::Rng;
 
 use repl_oxide::{
-    completion::{CommandScheme, InnerScheme, RecData, RecKind, ROOT},
+    completion::{CommandScheme, InnerScheme, Parent, RecData, RecKind},
     executor::{format_for_clap, CommandHandle, Executor},
     repl_builder,
 };
@@ -101,7 +101,7 @@ const COMMAND_INNER: [InnerScheme; 3] = [
     // echo
     InnerScheme::new(
         RecData::new(
-            Some(ROOT),
+            Parent::Root,
             // `ECHO_RECS` has no aliased names
             None,
             // Link to `ECHO_RECS` short counter parts
@@ -119,7 +119,7 @@ const COMMAND_INNER: [InnerScheme; 3] = [
     // roll
     InnerScheme::new(
         RecData::new(
-            Some(ROOT),
+            Parent::Root,
             // `ROLL_RECS` has no aliased names
             None,
             // Link to `ROLL_RECS` short counter parts
@@ -136,7 +136,7 @@ const COMMAND_INNER: [InnerScheme; 3] = [
     ),
     // quit
     // Discribe "quit" as an end node
-    InnerScheme::end(ROOT),
+    InnerScheme::end(Parent::Root),
 ];
 
 const ECHO_INNER: [InnerScheme; 2] = [
@@ -144,7 +144,7 @@ const ECHO_INNER: [InnerScheme; 2] = [
     InnerScheme::new(
         RecData::new(
             // Link to the parent command "echo"
-            Some(COMMAND_RECS[0]),
+            Parent::Entry(COMMAND_RECS[0]),
             // `ECHO_CASE_RECS` has no aliased names
             None,
             // `ECHO_CASE_RECS` has no short counter parts
@@ -161,14 +161,14 @@ const ECHO_INNER: [InnerScheme; 2] = [
     // reverse
     // List the reverse command as a flag and is also not the end of the recomendation tree
     // since it doesn't matter the position of any 3 "echo" arguments
-    InnerScheme::flag(COMMAND_RECS[0], false),
+    InnerScheme::flag(Parent::Entry(COMMAND_RECS[0]), false),
 ];
 
 const ROLL_INNER: [InnerScheme; 1] = [
     // sides
     InnerScheme::empty_with(
         // Link to the parent command "roll"
-        COMMAND_RECS[1],
+        Parent::Entry(COMMAND_RECS[1]),
         // Discribe the recomendation kind as `UserDefinded` with max input of 1
         RecKind::user_defined_with_num_args(1),
         // List as not the end of the recomendation tree

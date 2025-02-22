@@ -7,8 +7,6 @@ use std::{
 
 // use crate::get_debugger;
 
-pub const ROOT: &str = "ROOT";
-const UNIVERSAL: &str = "ANY";
 const HELP_STR: &str = "help";
 const HELP_SHORT: &str = "h";
 const HELP_ARG: &str = "--help";
@@ -85,7 +83,7 @@ pub struct InnerScheme {
 #[derive(PartialEq, Eq, Debug)]
 pub struct RecData {
     /// Name of the parent entry
-    parent: Option<&'static str>,
+    parent: Option<Parent>,
     /// Required data if this node contains any aliases
     // Index of rec in `recs` -> index of alias in `recs`
     alias: Option<&'static [(usize, usize)]>,
@@ -98,6 +96,13 @@ pub struct RecData {
     pub(crate) kind: RecKind,
     /// Signals this is a leaf node
     end: bool,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Parent {
+    Root,
+    Universal,
+    Entry(&'static str),
 }
 
 impl CommandScheme {
@@ -117,7 +122,7 @@ impl InnerScheme {
         InnerScheme { data, inner }
     }
 
-    pub const fn flag(parent: &'static str, end: bool) -> Self {
+    pub const fn flag(parent: Parent, end: bool) -> Self {
         InnerScheme {
             data: RecData {
                 parent: Some(parent),
@@ -131,7 +136,7 @@ impl InnerScheme {
         }
     }
 
-    pub const fn empty_with(parent: &'static str, kind: RecKind, end: bool) -> Self {
+    pub const fn empty_with(parent: Parent, kind: RecKind, end: bool) -> Self {
         InnerScheme {
             data: RecData {
                 parent: Some(parent),
@@ -145,7 +150,7 @@ impl InnerScheme {
         }
     }
 
-    pub const fn end(parent: &'static str) -> Self {
+    pub const fn end(parent: Parent) -> Self {
         InnerScheme {
             data: RecData {
                 parent: Some(parent),
@@ -162,7 +167,7 @@ impl InnerScheme {
 
 impl RecData {
     pub const fn new(
-        parent: Option<&'static str>,
+        parent: Parent,
         alias: Option<&'static [(usize, usize)]>,
         short: Option<&'static [(usize, &'static str)]>,
         recs: Option<&'static [&'static str]>,
@@ -170,7 +175,7 @@ impl RecData {
         end: bool,
     ) -> Self {
         Self {
-            parent,
+            parent: Some(parent),
             alias,
             short,
             recs,
@@ -196,7 +201,7 @@ impl RecData {
 
     pub const fn help() -> Self {
         Self {
-            parent: Some(UNIVERSAL),
+            parent: Some(Parent::Universal),
             alias: None,
             short: None,
             recs: None,
@@ -849,10 +854,8 @@ impl Completion {
             .unwrap_or(command_str);
 
         if let Some(&i) = self.rec_map.get(hash_str) {
-            if let Some(parent) = self.rec_list[i].parent {
-                if parent == ROOT || parent == UNIVERSAL {
-                    command.hash_i = i;
-                }
+            if let Some(Parent::Root | Parent::Universal) = self.rec_list[i].parent {
+                command.hash_i = i;
             }
         }
     }
@@ -870,12 +873,14 @@ impl Completion {
             .to_slice_unchecked(line);
         let arg_str = arg_str.trim_start_matches('-');
         if let Some(&i) = self.rec_map.get(arg_str) {
-            if let Some(parent) = self.rec_list[i].parent {
-                // `hash_command_unchecked` _only_ provides case leeway for 'Title case' commands
+            if match self.rec_list[i].parent {
+                // `hash_command_unchecked` _only_ provides case leeway for 'Pascal Case' commands
                 // making it fine to ignore all case here
-                if parent.eq_ignore_ascii_case(command) || parent == UNIVERSAL {
-                    arg.hash_i = i;
-                }
+                Some(Parent::Entry(p)) => p.eq_ignore_ascii_case(command),
+                Some(Parent::Universal) => true,
+                _ => false,
+            } {
+                arg.hash_i = i;
             }
         }
     }
