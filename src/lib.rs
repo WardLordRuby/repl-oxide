@@ -1,5 +1,6 @@
 mod builder;
 mod definitions;
+mod history;
 mod line;
 mod style;
 

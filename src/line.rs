@@ -2,6 +2,7 @@ use crate::{
     ansi_code::{DIM_WHITE, RED, RESET},
     callback::{AsyncCallback, Callback, InputEventHook, ModLineState},
     completion::{Completion, Direction},
+    history::History,
 };
 use constcat::concat;
 use crossterm::{
@@ -15,9 +16,8 @@ use crossterm::{
 use shellwords::split as shellwords_split;
 use std::{
     borrow::Cow,
-    collections::{BTreeMap, HashMap, VecDeque},
+    collections::VecDeque,
     fmt::Display,
-    hash::{DefaultHasher, Hash, Hasher},
     io::{self, Write},
     sync::atomic::{AtomicUsize, Ordering},
 };
@@ -51,7 +51,7 @@ static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
 pub struct LineReader<Ctx, W: Write> {
     pub(crate) completion: Completion,
     pub(crate) line: LineData,
-    history: History,
+    pub(crate) history: History,
     ghost_text: Option<GhostTextMeta>,
     term: W,
     /// (columns, rows)
@@ -268,36 +268,6 @@ impl LineData {
     pub(crate) fn found_err(&mut self, found: bool) {
         self.err = found
     }
-}
-
-#[derive(Default)]
-pub(crate) struct History {
-    pub(crate) prev_entries: BTreeMap<usize, String>,
-    value_order_map: HashMap<u64, usize>,
-    top: usize,
-    temp_top: String,
-    curr_pos: usize,
-}
-
-impl History {
-    /// Caller must gaurentee their are available entries in the given direction
-    fn get_unchecked(&mut self, direction: Direction) -> &str {
-        loop {
-            self.curr_pos = self
-                .curr_pos
-                .saturating_add_signed(direction.to_int() as isize);
-            if let Some(entry) = self.prev_entries.get(&self.curr_pos) {
-                return entry;
-            }
-        }
-    }
-}
-
-#[inline]
-fn hash_str(str: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    str.hash(&mut hasher);
-    hasher.finish()
 }
 
 #[derive(Clone, Copy)]
@@ -718,9 +688,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         // Render is only ran if the input state has changed, so lets try to update ghost text
         let Some((ghost_text, meta)) = self
             .history
-            .prev_entries
             .iter()
-            .rev()
             .find_map(|(p, prev)| {
                 prev.strip_prefix(self.input())
                     .map(|str| (str, GhostTextMeta::History { p: *p }))
@@ -833,11 +801,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         std::mem::take(&mut self.line.input)
     }
 
-    #[inline]
-    fn reset_history_idx(&mut self) {
-        self.history.curr_pos = self.history.top;
-    }
-
     /// Changes the currently displayed user input to the given `line`
     pub fn change_line(&mut self, line: String) -> io::Result<()> {
         self.change_line_raw(line)?;
@@ -863,9 +826,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
         Ok(self
             .history
-            .prev_entries
-            .values()
-            .next_back()
+            .last()
             .expect("just pushed into `prev_entries`"))
     }
 
@@ -878,9 +839,8 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         match meta {
             GhostTextMeta::History { p } => self.change_line(
                 self.history
-                    .prev_entries
                     .get(&p)
-                    .expect("given `p` is valid position")
+                    .expect("set meta `p` is valid position")
                     .clone(),
             )?,
             GhostTextMeta::Recomendation { len } => {
@@ -891,83 +851,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         }
 
         Ok(())
-    }
-
-    /// Pushes onto history and resets the internal history index to the top
-    pub fn add_to_history(&mut self, mut add: &str) {
-        add = add.trim();
-
-        if self
-            .history
-            .prev_entries
-            .values()
-            .next_back()
-            .is_some_and(|entry| entry == add)
-        {
-            self.reset_history_idx();
-            return;
-        }
-
-        let new_last_p = self.history.top;
-        self.history.top += 1;
-
-        self.history
-            .value_order_map
-            .entry(hash_str(add))
-            .and_modify(|prev_p| {
-                let old = self
-                    .history
-                    .prev_entries
-                    .remove(prev_p)
-                    .expect("value must have been inserted on previous function call");
-                self.history.prev_entries.insert(new_last_p, old);
-                *prev_p = new_last_p;
-            })
-            .or_insert_with(|| {
-                self.history
-                    .prev_entries
-                    .insert(new_last_p, add.to_string());
-                new_last_p
-            });
-
-        self.reset_history_idx();
-    }
-
-    /// Changes the current line to the previous history entry if available
-    pub fn history_back(&mut self) -> io::Result<()> {
-        if self.history.prev_entries.is_empty()
-            || self.history.curr_pos == *self.history.prev_entries.keys().next().unwrap()
-        {
-            self.set_uneventful();
-            return Ok(());
-        }
-        if self.history.curr_pos == self.history.top {
-            self.history.temp_top = std::mem::take(&mut self.line.input);
-        }
-        let entry = self.history.get_unchecked(Direction::Previous).to_string();
-        self.change_line(entry)
-    }
-
-    /// Changes the current line to the next history entry if available
-    pub fn history_forward(&mut self) -> io::Result<()> {
-        if self.history.curr_pos == self.history.top {
-            self.set_uneventful();
-            return Ok(());
-        }
-        let entry = if self.history.curr_pos
-            == *self
-                .history
-                .prev_entries
-                .keys()
-                .next_back()
-                .expect("missed early return so `history_back` must have been called before")
-        {
-            self.history.curr_pos = self.history.top;
-            std::mem::take(&mut self.history.temp_top)
-        } else {
-            self.history.get_unchecked(Direction::Next).to_string()
-        };
-        self.change_line(entry)
     }
 
     /// If a [custom quit command] is set this will tell the read eval print loop to process the set command
