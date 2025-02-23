@@ -279,7 +279,7 @@ pub enum Direction {
 
 impl Direction {
     #[inline]
-    fn to_int(&self) -> i8 {
+    pub(crate) fn to_int(&self) -> i8 {
         match self {
             Direction::Next => 1,
             Direction::Previous => -1,
