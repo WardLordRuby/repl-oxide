@@ -102,7 +102,7 @@ async fn main() -> io::Result<()> {
         repl.clear_unwanted_inputs(&mut event_stream).await?;
 
         // Render the lines current state
-        repl.render()?;
+        repl.render(&mut command_ctx)?;
 
         // Process async events as they happen
         tokio::select! {

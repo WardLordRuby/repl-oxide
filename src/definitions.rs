@@ -21,9 +21,9 @@ pub mod callback {
     // add documentation for these types
 
     pub type InputEventHook<Ctx, W> =
-        dyn Fn(&mut LineReader<Ctx, W>, Event) -> io::Result<HookedEvent<Ctx>> + Send;
-    pub type ModLineState<Ctx, W> = dyn FnOnce(&mut LineReader<Ctx, W>) -> io::Result<()> + Send;
-    pub type Callback<Ctx> = dyn Fn(&mut Ctx) -> Result<(), InputHookErr> + Send;
+        dyn Fn(&mut LineReader<Ctx, W>, &mut Ctx, Event) -> io::Result<HookedEvent<Ctx>> + Send;
+    pub type HookLifecycle<Ctx, W> =
+        dyn FnOnce(&mut LineReader<Ctx, W>, &mut Ctx) -> io::Result<()> + Send;
     pub type AsyncCallback<Ctx> = dyn for<'a> FnOnce(
             &'a mut Ctx,
         )

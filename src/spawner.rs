@@ -43,7 +43,7 @@ where
 
             loop {
                 self.clear_unwanted_inputs(&mut reader).await?;
-                self.render()?;
+                self.render(&mut ctx)?;
 
                 tokio::select! {
                     biased;

@@ -15,7 +15,7 @@ impl<Ctx: Executor<W>, W: Write + Send> LineReader<Ctx, W> {
 
         loop {
             self.clear_unwanted_inputs(&mut reader).await?;
-            self.render()?;
+            self.render(ctx)?;
 
             if let Some(event_result) = reader.next().await {
                 general_event_process!(self, ctx, event_result)
