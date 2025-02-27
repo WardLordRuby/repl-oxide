@@ -1,6 +1,8 @@
 use crate::{executor::Executor, general_event_process, line::LineReader};
-use crossterm::event::EventStream;
+
 use std::io::{self, Write};
+
+use crossterm::event::EventStream;
 use tokio_stream::StreamExt;
 
 impl<Ctx: Executor<W>, W: Write + Send> LineReader<Ctx, W> {

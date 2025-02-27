@@ -1,6 +1,12 @@
 // The `spawn` method requires the repl-oxide feature flag "spawner"
 /*         cargo r --example spawner --features="spawner"          */
 
+use repl_oxide::{
+    ansi_code::{GREEN, RED, RESET},
+    executor::{format_for_clap, CommandHandle, Executor},
+    repl_builder, LineReader,
+};
+
 use std::{
     fmt::Display,
     io::{self, Stdout},
@@ -10,12 +16,6 @@ use clap::Parser;
 use tokio::{
     sync::mpsc::Sender,
     time::{sleep, Duration},
-};
-
-use repl_oxide::{
-    ansi_code::{GREEN, RED, RESET},
-    executor::{format_for_clap, CommandHandle, Executor},
-    repl_builder,
 };
 
 #[derive(Parser)]
@@ -38,6 +38,7 @@ struct CommandContext;
 impl Executor<Stdout> for CommandContext {
     async fn try_execute_command(
         &mut self,
+        _repl_handle: &mut LineReader<Self, Stdout>,
         user_tokens: Vec<String>,
     ) -> io::Result<OurCommandHandle> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {

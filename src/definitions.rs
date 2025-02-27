@@ -12,7 +12,7 @@ pub mod ansi_code {
 
 /// Collection of callbacks that allow for deeper library control
 pub mod callback {
-    use crate::line::{HookedEvent, InputHookErr, LineReader};
+    use crate::line::{CallbackErr, HookedEvent, LineReader};
 
     use crossterm::event::Event;
     use std::{future::Future, io, pin::Pin};
@@ -21,12 +21,15 @@ pub mod callback {
     // add documentation for these types
 
     pub type InputEventHook<Ctx, W> =
-        dyn Fn(&mut LineReader<Ctx, W>, &mut Ctx, Event) -> io::Result<HookedEvent<Ctx>> + Send;
+        dyn Fn(&mut LineReader<Ctx, W>, &mut Ctx, Event) -> io::Result<HookedEvent<Ctx, W>> + Send;
+
     pub type HookLifecycle<Ctx, W> =
         dyn FnOnce(&mut LineReader<Ctx, W>, &mut Ctx) -> io::Result<()> + Send;
-    pub type AsyncCallback<Ctx> = dyn for<'a> FnOnce(
+
+    pub type AsyncCallback<Ctx, W> = dyn for<'a> FnOnce(
+            &mut LineReader<Ctx, W>,
             &'a mut Ctx,
         )
-            -> Pin<Box<dyn Future<Output = Result<(), InputHookErr>> + Send + 'a>>
+            -> Pin<Box<dyn Future<Output = Result<(), CallbackErr>> + Send + 'a>>
         + Send;
 }

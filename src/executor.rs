@@ -1,4 +1,5 @@
-use crate::line::InputHook;
+use crate::{callback::AsyncCallback, line::InputHook, LineReader};
+
 use std::{
     future::Future,
     io::{self, Write},
@@ -23,6 +24,7 @@ pub fn format_for_clap(
 pub enum CommandHandle<Ctx, W: Write> {
     Processed,
     InsertHook(InputHook<Ctx, W>),
+    ExecuteAsyncCallback(Box<AsyncCallback<Ctx, W>>),
     Exit,
 }
 
@@ -67,6 +69,7 @@ pub enum CommandHandle<Ctx, W: Write> {
 pub trait Executor<W: Write + Send>: Sized + Send {
     fn try_execute_command(
         &mut self,
+        line_handle: &mut LineReader<Self, W>,
         user_tokens: Vec<String>,
     ) -> impl Future<Output = io::Result<CommandHandle<Self, W>>> + Send;
 }

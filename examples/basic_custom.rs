@@ -1,6 +1,12 @@
 // The helper macros for writing a custom loop requires the repl-oxide feature flag "macros"
 /*                   cargo r --example basic-custom --features="macros"                   */
 
+use repl_oxide::{
+    ansi_code::{RED, RESET},
+    executor::{format_for_clap, CommandHandle, Executor},
+    general_event_process, repl_builder, LineReader, StreamExt,
+};
+
 use std::{
     fmt::Display,
     io::{self, Stdout},
@@ -10,12 +16,6 @@ use clap::Parser;
 use tokio::{
     sync::mpsc::Sender,
     time::{sleep, Duration},
-};
-
-use repl_oxide::{
-    ansi_code::{RED, RESET},
-    executor::{format_for_clap, CommandHandle, Executor},
-    general_event_process, repl_builder, StreamExt,
 };
 
 #[derive(Parser)]
@@ -40,6 +40,7 @@ struct CommandContext;
 impl Executor<Stdout> for CommandContext {
     async fn try_execute_command(
         &mut self,
+        _repl_handle: &mut LineReader<Self, Stdout>,
         user_tokens: Vec<String>,
     ) -> io::Result<OurCommandHandle> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
@@ -111,7 +112,7 @@ async fn main() -> io::Result<()> {
             // Process each event recieved from the event stream
             Some(event_result) = event_stream.next() => {
                 // Use the library supplied default event processor
-                general_event_process!(repl, &mut command_ctx, event_result)
+                general_event_process!(&mut repl, &mut command_ctx, event_result)
             }
 
             // Writing your own loop allows for awaiting custom events

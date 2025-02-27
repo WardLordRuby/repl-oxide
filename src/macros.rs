@@ -14,7 +14,7 @@
 #[macro_export]
 macro_rules! process_async_callback {
     ($line:expr, $callback:expr, $ctx:expr) => {
-        if let Err(err) = $callback($ctx).await {
+        if let Err(err) = $callback($line, $ctx).await {
             tracing::error!("{err}");
             $line.conditionally_remove_hook($ctx, &err)?;
         }
@@ -39,18 +39,23 @@ macro_rules! process_async_callback {
 /// [`error!`]: <https://docs.rs/tracing/latest/tracing/macro.error.html>
 #[macro_export]
 macro_rules! general_event_process {
-    ($handle:expr, $ctx:expr, $event_result:expr) => {
-        match $handle.process_input_event($ctx, $event_result?)? {
+    ($line:expr, $ctx:expr, $event_result:expr) => {
+        match $line.process_input_event($ctx, $event_result?)? {
             $crate::EventLoop::Continue => (),
             $crate::EventLoop::Break => break,
             $crate::EventLoop::AsyncCallback(callback) => {
-                $crate::process_async_callback!($handle, callback, $ctx)
+                $crate::process_async_callback!($line, callback, $ctx)
             }
             $crate::EventLoop::TryProcessInput(Ok(user_tokens)) => {
-                match $ctx.try_execute_command(user_tokens).await? {
+                match $ctx.try_execute_command($line, user_tokens).await? {
                     $crate::executor::CommandHandle::Processed => (),
+                    $crate::executor::CommandHandle::ExecuteAsyncCallback(callback) => {
+                        callback($line, $ctx).await.unwrap_or_else(|err| {
+                            tracing::error!("{err}");
+                        })
+                    }
                     $crate::executor::CommandHandle::InsertHook(input_hook) => {
-                        $handle.register_input_hook(input_hook)
+                        $line.register_input_hook(input_hook)
                     }
                     $crate::executor::CommandHandle::Exit => break,
                 }

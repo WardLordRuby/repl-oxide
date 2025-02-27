@@ -4,6 +4,15 @@ use crate::{
     completion::{Completion, Direction},
     history::History,
 };
+
+use std::{
+    borrow::Cow,
+    collections::VecDeque,
+    fmt::Display,
+    io::{self, Write},
+    sync::atomic::{AtomicUsize, Ordering},
+};
+
 use constcat::concat;
 use crossterm::{
     cursor,
@@ -14,13 +23,6 @@ use crossterm::{
     QueueableCommand,
 };
 use shellwords::split as shellwords_split;
-use std::{
-    borrow::Cow,
-    collections::VecDeque,
-    fmt::Display,
-    io::{self, Write},
-    sync::atomic::{AtomicUsize, Ordering},
-};
 use strip_ansi::strip_ansi;
 use tokio::time::{timeout, Duration};
 use tokio_stream::StreamExt;
@@ -122,15 +124,16 @@ impl<Ctx, W: Write> Default for HookStates<Ctx, W> {
 
 impl<Ctx, W: Write> InputHook<Ctx, W> {
     /// For use when creating an `InputHook` that contains an [`AsyncCallback`] that can error, else use
-    /// [`with_new_uid`]. Ensure that the `InputHook` and [`InputHookErr`] share the
-    /// same [`HookUID`] obtained through [`HookUID::new`].
+    /// [`with_new_uid`]. Ensure that the `InputHook` and [`CallbackErr`] share the same [`HookUID`]
+    /// obtained through [`HookUID::new`].
     ///
-    /// The library supplied repl runners ([`run`] / [`spawn`]) will call [`conditionally_remove_hook`]
-    /// when any `AsyncCallback` errors. When writing your own repl it is recomended to implement this
-    /// logic.  
+    /// The library supplied repl runners ([`run`] / [`spawn`]) or event processor macro [`general_event_process`]
+    /// will call [`conditionally_remove_hook`] when any callback errors. When writing your own repl it is
+    /// recomended to implement this logic.  
     ///
     /// [`with_new_uid`]: Self::with_new_uid
     /// [`conditionally_remove_hook`]: LineReader::conditionally_remove_hook
+    /// [`general_event_process`]: crate::general_event_process
     /// [`run`]: crate::line::LineReader::run
     /// [`spawn`]: crate::line::LineReader::spawn
     pub fn new(
@@ -146,8 +149,8 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
         }
     }
 
-    /// For use when creating an `InputHook` that does not contain an [`AsyncCallback`] that can error, else
-    /// use [`new`].
+    /// For use when creating an `InputHook` that does not contain an [`AsyncCallback`] that can error, else use
+    /// [`new`].
     ///
     /// [`new`]: Self::new
     pub fn with_new_uid(
@@ -207,23 +210,23 @@ impl HookUID {
 
 /// The error type callbacks must return
 #[derive(Debug)]
-pub struct InputHookErr {
+pub struct CallbackErr {
     uid: HookUID,
     err: Cow<'static, str>,
 }
 
-impl InputHookErr {
+impl CallbackErr {
     /// Ensure `uid` is the same [`HookUID`] you pass to [`InputHook::new`]
     #[inline]
     pub fn new<T: Into<Cow<'static, str>>>(uid: HookUID, err: T) -> Self {
-        InputHookErr {
+        CallbackErr {
             uid,
             err: err.into(),
         }
     }
 }
 
-impl Display for InputHookErr {
+impl Display for CallbackErr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.err)
     }
@@ -322,15 +325,15 @@ pub enum HookControl {
 /// print loop and the new state of [`InputEventHook`]. A `InputEventHook`'s set deconstructor, will allways
 /// execute prior to set [`EventLoop`] instructions if `HookControl::Release` is specified. All `HookedEvent`
 /// constructors can not fail. They are always wrapped in `Ok` to reduce boilerplate
-pub struct HookedEvent<Ctx> {
-    event: EventLoop<Ctx>,
+pub struct HookedEvent<Ctx, W: Write> {
+    event: EventLoop<Ctx, W>,
     new_state: HookControl,
 }
 
-impl<Ctx> HookedEvent<Ctx> {
+impl<Ctx, W: Write> HookedEvent<Ctx, W> {
     /// Constructor can not fail, output is wrapped in `Ok` to reduce boilerplate
     #[inline]
-    pub fn new(event: EventLoop<Ctx>, new_state: HookControl) -> io::Result<Self> {
+    pub fn new(event: EventLoop<Ctx, W>, new_state: HookControl) -> io::Result<Self> {
         Ok(Self { event, new_state })
     }
 
@@ -377,10 +380,10 @@ impl<Ctx> HookedEvent<Ctx> {
 ///
 /// [`conditionally_remove_hook`]: LineReader::conditionally_remove_hook
 /// [`shellwords::split`]: <https://docs.rs/shell-words/latest/shell_words/fn.split.html>
-pub enum EventLoop<Ctx> {
+pub enum EventLoop<Ctx, W: Write> {
     Continue,
     Break,
-    AsyncCallback(Box<AsyncCallback<Ctx>>),
+    AsyncCallback(Box<AsyncCallback<Ctx, W>>),
     TryProcessInput(Result<Vec<String>, ParseErr>),
 }
 
@@ -392,10 +395,11 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         term_size: (u16, u16),
         custom_quit: Option<Vec<String>>,
         completion: Completion,
+        history: Option<History>,
     ) -> Self {
-        LineReader {
+        Self {
             line,
-            history: History::default(),
+            history: history.unwrap_or_default(),
             ghost_text: None,
             term,
             term_size,
@@ -479,7 +483,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     pub fn conditionally_remove_hook(
         &mut self,
         context: &mut Ctx,
-        err: &InputHookErr,
+        err: &CallbackErr,
     ) -> io::Result<bool> {
         if self
             .next_input_hook()
@@ -809,7 +813,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// returning you an owned `String` of what was cleared.
     fn reset_line_state(&mut self) -> String {
         self.reset_completion();
-        self.reset_history_idx();
+        self.history.reset_idx();
         self.line.len = 0;
         self.line.err = false;
         self.ghost_text = None;
@@ -873,7 +877,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///
     /// [custom quit command]: crate::LineReaderBuilder::with_custom_quit_command
     /// [`EventLoop::Break`]: crate::line::EventLoop
-    pub fn process_close_signal(&mut self) -> io::Result<EventLoop<Ctx>> {
+    pub fn process_close_signal(&mut self) -> io::Result<EventLoop<Ctx, W>> {
         self.clear_line()?;
         self.term.queue(cursor::Hide)?;
         let Some(quit_cmd) = self.custom_quit.clone() else {
@@ -903,11 +907,11 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///     line_handle.render()?;
     ///
     ///     if let Some(event_result) = reader.next().await {
-    ///         match line_handle.process_input_event(event_result?)? {
+    ///         match line_handle.process_input_event(&mut command_context, event_result?)? {
     ///             EventLoop::Continue => (),
     ///             EventLoop::Break => break,
     ///             EventLoop::AsyncCallback(callback) => {
-    ///                 if let Err(err) = callback(&mut command_context).await {
+    ///                 if let Err(err) = callback(&mut line_handle, &mut command_context).await {
     ///                     eprintln!("{err}");
     ///                     line_handle.conditionally_remove_hook(&err)?;
     ///                 }
@@ -916,6 +920,10 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///                 match command_context.try_execute_command(user_tokens).await? {
     ///                     CommandHandle::Processed => (),
     ///                     CommandHandle::InsertHook(input_hook) => line_handle.register_input_hook(input_hook),
+    ///                     CommandHandle::ExecuteAsyncCallback(callback) => {
+    ///                         callback(&mut line_handle, &mut command_context).await
+    ///                             .unwrap_or_else(|err| eprintln!("{err}"))
+    ///                     }
     ///                     CommandHandle::Exit => break,
     ///                 }
     ///             }
@@ -933,7 +941,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         &mut self,
         context: &mut Ctx,
         event: Event,
-    ) -> io::Result<EventLoop<Ctx>> {
+    ) -> io::Result<EventLoop<Ctx, W>> {
         execute!(self.term, BeginSynchronizedUpdate)?;
 
         if !self.input_hooks.is_empty() {

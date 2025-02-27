@@ -1,4 +1,5 @@
 use crate::{completion::Direction, line::LineReader};
+
 use std::{
     collections::{BTreeMap, HashMap},
     hash::{DefaultHasher, Hash, Hasher},
@@ -43,6 +44,52 @@ impl History {
     pub(crate) fn get(&self, position: &usize) -> Option<&String> {
         self.prev_entries.get(position)
     }
+
+    #[inline]
+    pub(crate) fn reset_idx(&mut self) {
+        self.curr_pos = self.top;
+    }
+
+    pub(crate) fn push(&mut self, mut add: &str) {
+        add = add.trim();
+
+        if self.last().is_some_and(|entry| entry == add) {
+            self.reset_idx();
+            return;
+        }
+
+        let new_last_p = self.top;
+        self.top += 1;
+
+        self.value_order_map
+            .entry(hash_str(add))
+            .and_modify(|prev_p| {
+                let old = self
+                    .prev_entries
+                    .remove(prev_p)
+                    .expect("value must have been inserted on previous function call");
+                self.prev_entries.insert(new_last_p, old);
+                *prev_p = new_last_p;
+            })
+            .or_insert_with(|| {
+                self.prev_entries.insert(new_last_p, add.to_string());
+                new_last_p
+            });
+
+        self.reset_idx();
+    }
+}
+
+impl<A: AsRef<str>> FromIterator<A> for History {
+    fn from_iter<T: IntoIterator<Item = A>>(iter: T) -> Self {
+        let mut history = History::default();
+
+        for entry in iter {
+            history.push(entry.as_ref());
+        }
+
+        history
+    }
 }
 
 #[inline]
@@ -54,37 +101,9 @@ fn hash_str(str: &str) -> u64 {
 
 impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// Pushes onto history and resets the internal history index to the top
-    pub fn add_to_history(&mut self, mut add: &str) {
-        add = add.trim();
-
-        if self.history.last().is_some_and(|entry| entry == add) {
-            self.reset_history_idx();
-            return;
-        }
-
-        let new_last_p = self.history.top;
-        self.history.top += 1;
-
-        self.history
-            .value_order_map
-            .entry(hash_str(add))
-            .and_modify(|prev_p| {
-                let old = self
-                    .history
-                    .prev_entries
-                    .remove(prev_p)
-                    .expect("value must have been inserted on previous function call");
-                self.history.prev_entries.insert(new_last_p, old);
-                *prev_p = new_last_p;
-            })
-            .or_insert_with(|| {
-                self.history
-                    .prev_entries
-                    .insert(new_last_p, add.to_string());
-                new_last_p
-            });
-
-        self.reset_history_idx();
+    #[inline]
+    pub fn add_to_history(&mut self, add: &str) {
+        self.history.push(add);
     }
 
     /// Changes the current line to the previous history entry if available
@@ -124,8 +143,21 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.change_line(entry)
     }
 
-    #[inline]
-    pub(crate) fn reset_history_idx(&mut self) {
-        self.history.curr_pos = self.history.top;
+    /// Returns history exported via clone as a new `Vec` where the most recient commands are on the top of the stack.
+    pub fn export_history(&self, max: Option<usize>) -> Vec<String> {
+        let skip = self.history.prev_entries.len()
+            - max
+                .filter(|&m| {
+                    debug_assert!(m != 0, "use `Vec::new`");
+                    m <= self.history.prev_entries.len()
+                })
+                .unwrap_or(self.history.prev_entries.len());
+
+        self.history
+            .prev_entries
+            .values()
+            .skip(skip)
+            .cloned()
+            .collect::<Vec<_>>()
     }
 }

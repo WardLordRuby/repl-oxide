@@ -1,4 +1,5 @@
 use crate::line::LineReader;
+
 use std::{
     collections::{HashMap, HashSet},
     io::{self, Write},
@@ -924,6 +925,15 @@ impl Completion {
             RecKind::UserDefined(_) | RecKind::Null => None,
         }
     }
+
+    /// Will panic if `self.completion.is_empty()`
+    fn set_default_recommendations_unchecked(&mut self) {
+        let commands = self.rec_list[COMMANDS];
+        self.recommendations = commands.recs.as_ref().expect("commands is not empty")
+            [..commands.unique_rec_end()]
+            .to_vec();
+        self.recommendations.push(HELP_STR);
+    }
 }
 
 impl<Ctx, W: Write> LineReader<Ctx, W> {
@@ -1042,7 +1052,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         if line_trim_start.is_empty() {
             // `comp_enabled` can only be set when `!Completion.is_empty()` via checks in `enable_completion` and
             // `LineReaderBuilder::build`. Making it safe to call `default_recomendations` here
-            self.default_recommendations_unchecked();
+            self.completion.set_default_recommendations_unchecked();
             self.line.err = false;
             self.completion.input.ending = LineEnd::default();
             return;
@@ -1444,15 +1454,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.change_line_raw(new_line)
     }
 
-    /// Will panic if `self.completion.is_empty()`
-    fn default_recommendations_unchecked(&mut self) {
-        let commands = self.completion.rec_list[COMMANDS];
-        self.completion.recommendations = commands.recs.as_ref().expect("commands is not empty")
-            [..commands.unique_rec_end()]
-            .to_vec();
-        self.completion.recommendations.push(HELP_STR);
-    }
-
     /// Clears all state found by the completion module
     pub(crate) fn reset_completion(&mut self) {
         self.line.err = false;
@@ -1460,7 +1461,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             self.completion.input.ending = LineEnd::default();
             return;
         }
-        self.default_recommendations_unchecked();
+        self.completion.set_default_recommendations_unchecked();
         self.completion.input = CompletionState::default();
         self.completion.indexer = Indexer::default();
     }

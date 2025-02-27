@@ -1,16 +1,16 @@
 // Currently completion suggestions must be manually mapped out in a CONST context
 /*               cargo r --example completion --features="runner"               */
 
+use repl_oxide::{
+    completion::{CommandScheme, InnerScheme, Parent, RecData, RecKind},
+    executor::{format_for_clap, CommandHandle, Executor},
+    repl_builder, LineReader,
+};
+
 use std::io::{self, Stdout};
 
 use clap::{value_parser, Args, CommandFactory, Parser, ValueEnum};
 use rand::Rng;
-
-use repl_oxide::{
-    completion::{CommandScheme, InnerScheme, Parent, RecData, RecKind},
-    executor::{format_for_clap, CommandHandle, Executor},
-    repl_builder,
-};
 
 #[derive(Parser)]
 #[command(
@@ -228,6 +228,7 @@ impl CommandContext {
 impl Executor<Stdout> for CommandContext {
     async fn try_execute_command(
         &mut self,
+        _repl_handle: &mut LineReader<Self, Stdout>,
         user_tokens: Vec<String>,
     ) -> io::Result<OurCommandHandle> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {

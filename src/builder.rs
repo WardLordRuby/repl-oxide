@@ -1,12 +1,13 @@
 use crate::{
     completion::{CommandScheme, Completion},
+    history::History,
     line::{LineData, LineReader},
 };
 
+use std::io::{self, ErrorKind, Write};
+
 use crossterm::{cursor, terminal, QueueableCommand};
 use shellwords::split as shellwords_split;
-
-use std::io::{self, ErrorKind, Write};
 
 /* -------------------------------- Debug tool -------------------------------- */
 // static mut DEBUGGER: std::sync::OnceLock<std::fs::File> = std::sync::OnceLock::new();
@@ -46,6 +47,7 @@ pub struct LineReaderBuilder<'a, W: Write> {
     term_size: Option<(u16, u16)>,
     prompt: Option<String>,
     prompt_end: Option<String>,
+    starting_history: Option<History>,
     style_enabled: bool,
 }
 
@@ -62,6 +64,7 @@ pub fn repl_builder<W: Write>(terminal: W) -> LineReaderBuilder<'static, W> {
         term_size: None,
         prompt: None,
         prompt_end: None,
+        starting_history: None,
         style_enabled: true,
     }
 }
@@ -74,6 +77,13 @@ impl<'a, W: Write> LineReaderBuilder<'a, W> {
     /// [`EventLoop::Break`]: crate::line::EventLoop
     pub fn with_custom_quit_command(mut self, quit_cmd: &'a str) -> Self {
         self.custom_quit = Some(quit_cmd);
+        self
+    }
+
+    /// Supply history entries that the repl should start with. The end of the given `history` slice will
+    /// be the most recient.
+    pub fn with_history_entries<S: AsRef<str>>(mut self, history: &'a [S]) -> Self {
+        self.starting_history = Some(History::from_iter(history));
         self
     }
 }
@@ -165,6 +175,7 @@ impl<W: Write> LineReaderBuilder<'_, W> {
             term_size,
             custom_quit,
             completion,
+            self.starting_history,
         ))
     }
 }

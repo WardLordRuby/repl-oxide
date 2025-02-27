@@ -1,9 +1,11 @@
 use crate::{executor::Executor, general_event_process, line::LineReader};
-use crossterm::event::EventStream;
+
 use std::{
     fmt::Display,
     io::{self, Write},
 };
+
+use crossterm::event::EventStream;
 use tokio::{sync::mpsc::Sender, task::JoinHandle};
 use tokio_stream::StreamExt;
 
@@ -49,7 +51,7 @@ where
                     biased;
 
                     Some(event_result) = reader.next() => {
-                        general_event_process!(self, &mut ctx, event_result)
+                        general_event_process!(&mut self, &mut ctx, event_result)
                     }
 
                     Some(msg) = msg_rx.recv() => {
