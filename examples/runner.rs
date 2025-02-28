@@ -3,7 +3,7 @@
 
 use repl_oxide::{
     executor::{format_for_clap, CommandHandle, Executor},
-    repl_builder, LineReader,
+    println, repl_builder, LineReader,
 };
 
 use std::io::{self, Stdout};
@@ -39,25 +39,41 @@ struct CommandContext {
 
 // Commands can be implemented on our context
 impl CommandContext {
-    async fn async_test() -> io::Result<OurCommandHandle> {
-        println!("Performing async tasks");
+    async fn async_test(
+        repl_handle: &mut LineReader<Self, Stdout>,
+    ) -> io::Result<OurCommandHandle> {
+        repl_handle.println("Performing async tasks")?;
+
+        // MARK: XXX
+        // What is the prefered method to access the handle over thread bounds?
+        // Is it acceptable to force the user to supply the exclusive reference to
+        // the repl's writer?
+
         let t_1 = tokio::spawn(async {
             sleep(Duration::from_secs(1)).await;
-            println!("Finished task 1")
+            println(&mut io::stdout(), "Finished task 1")
         });
         let t_2 = tokio::spawn(async {
             sleep(Duration::from_secs(2)).await;
-            println!("Finished task 2")
+            println(&mut io::stdout(), "Finished task 2")
         });
-        let _ = tokio::join!(t_1, t_2);
+        let (r_1, r_2) = tokio::try_join!(t_1, t_2).unwrap();
+
+        r_1?;
+        r_2?;
+
         Ok(CommandHandle::Processed)
     }
 
-    fn count(&mut self, add: Option<Vec<isize>>) -> io::Result<OurCommandHandle> {
+    fn count(
+        &mut self,
+        repl_handle: &mut LineReader<Self, Stdout>,
+        add: Option<Vec<isize>>,
+    ) -> io::Result<OurCommandHandle> {
         if let Some(numbers) = add {
             numbers.into_iter().for_each(|n| self.count += n);
         }
-        println!("Total seen: {}", self.count);
+        repl_handle.println(format!("Total seen: {}", self.count))?;
         Ok(CommandHandle::Processed)
     }
 }
@@ -65,16 +81,18 @@ impl CommandContext {
 impl Executor<Stdout> for CommandContext {
     async fn try_execute_command(
         &mut self,
-        _repl_handle: &mut LineReader<Self, Stdout>,
+        repl_handle: &mut LineReader<Self, Stdout>,
         user_tokens: Vec<String>,
     ) -> io::Result<OurCommandHandle> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
             Ok(command) => match command {
-                Command::Count { numbers } => self.count(numbers),
-                Command::Test => CommandContext::async_test().await,
+                Command::Count { numbers } => self.count(repl_handle, numbers),
+                Command::Test => CommandContext::async_test(repl_handle).await,
                 Command::Quit => Ok(CommandHandle::Exit),
             },
-            Err(err) => err.print().map(|_| CommandHandle::Processed),
+            Err(err) => repl_handle
+                .println(err.render().ansi().to_string())
+                .map(|_| CommandHandle::Processed),
         }
     }
 }
@@ -92,7 +110,10 @@ async fn main() -> io::Result<()> {
     repl.run(&mut command_ctx).await?;
 
     // Perform cleanup / process final state
-    println!("Uploaded total count: {}, to server!", command_ctx.count);
+    repl.println(format!(
+        "Uploaded total count: {}, to server!",
+        command_ctx.count
+    ))?;
 
     Ok(())
 }

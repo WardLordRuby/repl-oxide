@@ -47,7 +47,7 @@ fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {
     // Define how our `InputEventHook` reacts to `KeyEvent`s of `KeyEventKind::Press`
     // This could also easily be set up to only react apon enter, for simplicity we will just react apon press
     let input_hook: Box<InputEventHook<CommandContext, Stdout>> =
-        Box::new(|_repl_handle, _command_context, event| match event {
+        Box::new(|repl_handle, _command_context, event| match event {
             Event::Key(
                 KeyEvent {
                     code: KeyCode::Char('c'),
@@ -63,7 +63,10 @@ fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {
                     code: KeyCode::Char('y'),
                     ..
                 },
-            ) => HookedEvent::break_repl(),
+            ) => {
+                repl_handle.clear_line()?;
+                HookedEvent::break_repl()
+            }
             _ => HookedEvent::release_hook(),
         });
 
@@ -81,14 +84,16 @@ fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {
 impl Executor<Stdout> for CommandContext {
     async fn try_execute_command(
         &mut self,
-        _repl_handle: &mut LineReader<Self, Stdout>,
+        repl_handle: &mut LineReader<Self, Stdout>,
         user_tokens: Vec<String>,
     ) -> io::Result<CommandHandle<CommandContext, Stdout>> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
             Ok(command) => match command {
                 Command::Quit => quit(),
             },
-            Err(err) => err.print().map(|_| CommandHandle::Processed),
+            Err(err) => repl_handle
+                .println(err.render().ansi().to_string())
+                .map(|_| CommandHandle::Processed),
         }
     }
 }

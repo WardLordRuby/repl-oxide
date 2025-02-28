@@ -38,14 +38,16 @@ struct CommandContext;
 impl Executor<Stdout> for CommandContext {
     async fn try_execute_command(
         &mut self,
-        _repl_handle: &mut LineReader<Self, Stdout>,
+        repl_handle: &mut LineReader<Self, Stdout>,
         user_tokens: Vec<String>,
     ) -> io::Result<OurCommandHandle> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
             Ok(command) => match command {
                 Command::Quit => Ok(CommandHandle::Exit),
             },
-            Err(err) => err.print().map(|_| CommandHandle::Processed),
+            Err(err) => repl_handle
+                .println(err.render().ansi().to_string())
+                .map(|_| CommandHandle::Processed),
         }
     }
 }

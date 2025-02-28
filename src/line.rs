@@ -33,11 +33,6 @@ use tokio_stream::StreamExt;
 // 3. Add docs for completion
 // 4. Finish doc todos + create README.md
 
-// UNIX BUG
-// "Raw Mode" on unix needs "\r\n" line endings
-// This means the user can never use `println!` macros or be forced to append '\r' manually
-// - Proposed solution in staging -
-
 const DEFAULT_SEPARATOR: &str = ">";
 const DEFAULT_PROMPT: &str = ">";
 
@@ -45,7 +40,7 @@ const DEFAULT_PROMPT: &str = ">";
 // The '+ 1' is accounting for the space character located in our impl `Display` for `Self`
 const DEFAULT_PROMPT_LEN: u16 = DEFAULT_PROMPT.len() as u16 + DEFAULT_SEPARATOR.len() as u16 + 1;
 
-const NEW_LINE: &str = "\n";
+const NEW_LINE: &str = "\r\n";
 
 static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
 
@@ -70,6 +65,28 @@ impl<Ctx, W: Write> Drop for LineReader<Ctx, W> {
         execute!(self.term, cursor::Show).expect("Still accepting commands");
         crossterm::terminal::disable_raw_mode().expect("enabled on creation");
     }
+}
+
+/// Queues text to be displayed on the given writer. Replaces all new line characters with "\r\n". Supports
+/// printing multi-line strings
+///
+/// Since repl-oxide requires full control over the terminal driver and enforces "Raw Mode" via [`build`],
+/// [`std::println!`] on UNIX systems does not display text as it normally would. This function will ensure
+/// text is printed as you would expect on all targets.
+///
+/// If only compiling for Windows targets, the `println!` macro will display text as expected.
+///
+/// [`build`]: crate::builder::LineReaderBuilder::build
+pub fn println<S, W>(writer: &mut W, str: S) -> io::Result<()>
+where
+    S: AsRef<str>,
+    W: Write,
+{
+    writer.queue(Print(format!(
+        "{}{NEW_LINE}",
+        str.as_ref().replace("\n", NEW_LINE)
+    )))?;
+    Ok(())
 }
 
 /// Powerful type that allows customization of library default implementations
@@ -474,8 +491,8 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// Eg:
     /// ```ignore
     /// EventLoop::AsyncCallback(callback) => {
-    ///     if let Err(err) = callback(&mut command_context).await {
-    ///         eprintln!("{err}");
+    ///     if let Err(err) = callback(&mut line_handle, &mut command_context).await {
+    ///         line_handle.println(err.to_string())?;
     ///         line_handle.conditionally_remove_hook(&err)?;
     ///     }
     /// },
@@ -516,12 +533,25 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         execute!(self.term, BeginSynchronizedUpdate)?;
         self.term.queue(cursor::Hide)?;
         self.move_to_beginning(self.line_len())?;
-        self.term
-            .queue(Clear(FromCursorDown))?
-            .queue(Print(msg))?
-            .queue(Print(NEW_LINE))?;
+        self.term.queue(Clear(FromCursorDown))?;
+        self.println(msg.to_string())?;
         self.cursor_at_start = false;
         Ok(())
+    }
+
+    /// Queues text to be displayed on the repl's writer. Replaces all new line characters with "\r\n". Supports
+    /// printing multi-line strings
+    ///
+    /// Since repl-oxide requires full control over the terminal driver and enforces "Raw Mode" via [`build`],
+    /// [`std::println!`] on UNIX systems does not display text as it normally would. This function will ensure
+    /// text is printed as you would expect on all targets.
+    ///
+    /// If only compiling for Windows targets, the `println!` macro will display text as expected.
+    ///
+    /// [`build`]: crate::builder::LineReaderBuilder::build
+    #[inline]
+    pub fn println<S: AsRef<str>>(&mut self, str: S) -> io::Result<()> {
+        println(&mut self.term, str)
     }
 
     /// Returns if completion is currently enabled
@@ -912,7 +942,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///             EventLoop::Break => break,
     ///             EventLoop::AsyncCallback(callback) => {
     ///                 if let Err(err) = callback(&mut line_handle, &mut command_context).await {
-    ///                     eprintln!("{err}");
+    ///                     line_handle.println(err.to_string())?;
     ///                     line_handle.conditionally_remove_hook(&err)?;
     ///                 }
     ///             },
@@ -921,14 +951,15 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///                     CommandHandle::Processed => (),
     ///                     CommandHandle::InsertHook(input_hook) => line_handle.register_input_hook(input_hook),
     ///                     CommandHandle::ExecuteAsyncCallback(callback) => {
-    ///                         callback(&mut line_handle, &mut command_context).await
-    ///                             .unwrap_or_else(|err| eprintln!("{err}"))
+    ///                         if let Err(err) = callback(&mut line_handle, &mut command_context).await {
+    ///                             line_handle.println(err.to_string())?;
+    ///                         }
     ///                     }
     ///                     CommandHandle::Exit => break,
     ///                 }
     ///             }
     ///             EventLoop::TryProcessInput(Err(mismatched_quotes)) => {
-    ///                 eprintln!("{mismatched_quotes}")
+    ///                 line_handle.println(mismatched_quotes.to_string())?;
     ///             },
     ///         }
     ///     }

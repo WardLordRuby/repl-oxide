@@ -191,23 +191,30 @@ impl Default for CommandContext {
 
 // Commands can be implemented on our context
 impl CommandContext {
-    fn roll(&mut self, input_dice: Option<u8>) -> io::Result<OurCommandHandle> {
+    fn roll(
+        &mut self,
+        repl_handle: &mut LineReader<Self, Stdout>,
+        input_dice: Option<u8>,
+    ) -> io::Result<OurCommandHandle> {
         if let Some(side_count) = input_dice {
             if side_count != self.dice_sides {
                 self.dice_sides = side_count;
-                println!("Updated dice side preference to {side_count}");
+                repl_handle.println(format!("Updated dice side preference to {side_count}"))?;
             }
         }
 
-        println!(
+        repl_handle.println(format!(
             "You rolled a {}",
-            rand::rng().random_range(1..=self.dice_sides)
-        );
+            rand::rng().random_range(1..=self.dice_sides),
+        ))?;
 
         Ok(CommandHandle::Processed)
     }
 
-    fn echo(mut args: EchoArgs) -> io::Result<OurCommandHandle> {
+    fn echo(
+        repl_handle: &mut LineReader<Self, Stdout>,
+        mut args: EchoArgs,
+    ) -> io::Result<OurCommandHandle> {
         if args.reverse {
             args.string = args.string.chars().rev().collect()
         }
@@ -219,7 +226,7 @@ impl CommandContext {
             }
         }
 
-        println!("{}", args.string);
+        repl_handle.println(args.string)?;
         Ok(CommandHandle::Processed)
     }
 }
@@ -228,16 +235,18 @@ impl CommandContext {
 impl Executor<Stdout> for CommandContext {
     async fn try_execute_command(
         &mut self,
-        _repl_handle: &mut LineReader<Self, Stdout>,
+        repl_handle: &mut LineReader<Self, Stdout>,
         user_tokens: Vec<String>,
     ) -> io::Result<OurCommandHandle> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
             Ok(command) => match command {
-                Command::Echo { args } => CommandContext::echo(args),
-                Command::Roll { sides } => self.roll(sides),
+                Command::Echo { args } => CommandContext::echo(repl_handle, args),
+                Command::Roll { sides } => self.roll(repl_handle, sides),
                 Command::Quit => Ok(CommandHandle::Exit),
             },
-            Err(err) => err.print().map(|_| CommandHandle::Processed),
+            Err(err) => repl_handle
+                .println(err.render().ansi().to_string())
+                .map(|_| CommandHandle::Processed),
         }
     }
 }
