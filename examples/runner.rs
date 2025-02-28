@@ -45,7 +45,7 @@ impl CommandContext {
         repl_handle.println("Performing async tasks")?;
 
         // MARK: XXX
-        // What is the prefered method to access the handle over thread bounds?
+        // What is the preferred method to access the handle over thread bounds?
         // Is it acceptable to force the user to supply the exclusive reference to
         // the repl's writer?
 

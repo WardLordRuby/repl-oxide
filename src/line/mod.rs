@@ -1,8 +1,18 @@
+mod history;
+mod style;
+
+pub(crate) mod builder;
+
+/// Collection of types used for auto completion of user input
+pub mod completion;
+
 use crate::{
     ansi_code::{DIM_WHITE, RED, RESET},
     callback::{AsyncCallback, HookLifecycle, InputEventHook},
-    completion::{Completion, Direction},
-    history::History,
+    line::{
+        completion::{Completion, Direction},
+        history::History,
+    },
 };
 
 use std::{
@@ -965,11 +975,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///                 match command_context.try_execute_command(user_tokens).await? {
     ///                     CommandHandle::Processed => (),
     ///                     CommandHandle::InsertHook(input_hook) => line_handle.register_input_hook(input_hook),
-    ///                     CommandHandle::ExecuteAsyncCallback(callback) => {
-    ///                         if let Err(err) = callback(&mut line_handle, &mut command_context).await {
-    ///                             line_handle.println(err.to_string())?;
-    ///                         }
-    ///                     }
     ///                     CommandHandle::Exit => break,
     ///                 }
     ///             }

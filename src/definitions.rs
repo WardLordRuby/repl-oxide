@@ -32,9 +32,10 @@ pub mod callback {
 
     /// Callback to be used when you need to await operations on your generic `Ctx`
     ///
-    /// Can be created from within an [`InputHook`] or communicated to the run eval process loop to be
-    /// immediately executed as an `FnOnce`
+    /// Can be returned as the [`HookedEvent`] from within an [`InputHook`] and then awaited on
+    /// by the run eval process loop.
     ///
+    /// [`HookedEvent`]: crate::line::HookedEvent
     /// [`InputHook`]: crate::line::InputHook
     pub type AsyncCallback<Ctx, W> = dyn for<'a> FnOnce(
             &mut LineReader<Ctx, W>,

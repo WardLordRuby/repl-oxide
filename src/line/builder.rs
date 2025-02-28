@@ -1,7 +1,7 @@
-use crate::{
+use crate::line::{
     completion::{CommandScheme, Completion},
     history::History,
-    line::{LineData, LineReader},
+    LineData, LineReader,
 };
 
 use std::io::{self, ErrorKind, Write};

@@ -1,18 +1,12 @@
-mod builder;
 mod definitions;
-mod history;
 mod line;
-mod style;
-
-/// Collection of types used for auto completion of user input
-pub mod completion;
 
 /// Collection of types used to implment the `Executor` trait
 pub mod executor;
 
-pub use crate::builder::*;
 pub use crate::definitions::*;
-pub use crate::line::*;
+pub use line::builder::*;
+pub use line::*;
 
 #[cfg(feature = "macros")]
 #[doc(hidden)]

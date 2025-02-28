@@ -1,4 +1,4 @@
-use crate::{completion::Direction, line::LineReader};
+use crate::line::{completion::Direction, LineReader};
 
 use std::{
     collections::{BTreeMap, HashMap},

@@ -49,11 +49,6 @@ macro_rules! general_event_process {
             $crate::EventLoop::TryProcessInput(Ok(user_tokens)) => {
                 match $ctx.try_execute_command($line, user_tokens).await? {
                     $crate::executor::CommandHandle::Processed => (),
-                    $crate::executor::CommandHandle::ExecuteAsyncCallback(callback) => {
-                        callback($line, $ctx).await.unwrap_or_else(|err| {
-                            tracing::error!("{err}");
-                        })
-                    }
                     $crate::executor::CommandHandle::InsertHook(input_hook) => {
                         $line.register_input_hook(input_hook)
                     }
