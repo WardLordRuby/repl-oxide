@@ -10,7 +10,7 @@ use crossterm::style::{Color, Stylize};
 const QUOTES: [char; 2] = ['\'', '\"'];
 const QUOTE_LEN: usize = QUOTES[0].len_utf8();
 
-#[derive(Default, PartialEq, Eq)]
+#[derive(Default, PartialEq, Eq, Debug)]
 enum TextColor {
     #[default]
     Yellow,
@@ -169,8 +169,15 @@ fn stylize_input(input: &str) -> (String, bool) {
         } else {
             push_ws(&mut ctx);
 
-            if ctx.curr_color == TextColor::White && token.starts_with('-') {
-                ctx.set_color(TextColor::Grey);
+            if ctx.curr_color == TextColor::White {
+                let mut t_ch = token.chars();
+
+                if t_ch.next().is_some_and(|c| c == '-')
+                    // (1.82) `is_none_or` gets stabilized
+                    && t_ch.next().map_or(true, |c| c.is_alphabetic() || c == '-')
+                {
+                    ctx.set_color(TextColor::Grey);
+                }
             }
         }
 
