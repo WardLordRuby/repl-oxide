@@ -25,12 +25,13 @@ where
     /// Generally for advanced cases it is recomended to write your own read eval print loop over an
     /// [`EventStream`] this way will allow for deeper customization, make it easier to spot potential
     /// dead locks, and have all the same functionality `spawn` provides.
-    /// See: 'examples/basic_custom.rs' / <WITHOUT_MACRO>
+    /// See: [basic_custom.rs] / <WITHOUT_MACRO>
     ///
     /// Avoid using `Ctx`'s whos fields contain `Arc<std::sync::Mutex<T>>` as it would be possible to run
     /// into dead locks if the repl thread tries to access the mutex at the same time as your own main
     /// thread. Using an async aware [`tokio::sync::Mutex`] should avoid dead lock scenarios
     ///
+    /// [basic_custom.rs]: <https://github.com/WardLordRuby/repl-oxide/blob/main/examples/basic_custom.rs>
     /// [`EventStream`]: <https://docs.rs/crossterm/0.28.1/crossterm/event/struct.EventStream.html>
     /// [`tokio::sync::Mutex`]: <https://docs.rs/tokio/latest/tokio/sync/struct.Mutex.html>
     /// [`tokio::sync::mpsc::Sender`]: <https://docs.rs/tokio/latest/tokio/sync/mpsc/struct.Sender.html>

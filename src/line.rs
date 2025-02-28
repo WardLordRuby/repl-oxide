@@ -67,12 +67,17 @@ impl<Ctx, W: Write> Drop for LineReader<Ctx, W> {
     }
 }
 
-/// Queues text to be displayed on the given writer. Replaces all new line characters with "\r\n". Supports
-/// printing multi-line strings
+/// Queues text to be displayed on the given writer to normalize accross targets.
+///
+/// Replaces all new line characters with "\r\n". Supports printing multi-line strings.
 ///
 /// Since repl-oxide requires full control over the terminal driver and enforces "Raw Mode" via [`build`],
 /// [`std::println!`] on UNIX systems does not display text as it normally would. This function will ensure
 /// text is printed as you would expect on all targets.
+///
+/// This function is designed to only be used when the repl is busy and you do not have access to the repl
+/// handle prefer: [`LineReader::println`]. If you need to display text while the repl is active see:
+/// [`LineReader::print_background_msg`]
 ///
 /// If only compiling for Windows targets, the `println!` macro will display text as expected.
 ///
@@ -104,8 +109,9 @@ where
 /// Hooks require a [`InputEventHook`] this callback can be is entirely responsible for controlling _all_
 /// reactions to [`KeyEvent`]'s of kind: [`KeyEventKind::Press`]. This will act as a manual overide of the
 /// libraries event processor. You will have access to manually determine what methods are called on the
-/// [`LineReader`]. See: 'examples/callbacks.rs'
+/// [`LineReader`]. See: [callbacks.rs]
 ///
+/// [callbacks.rs]: <https://github.com/WardLordRuby/repl-oxide/blob/main/examples/callbacks.rs>
 /// [`Event`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html>
 /// [`KeyEvent`]: <https://docs.rs/crossterm/latest/crossterm/event/struct.KeyEvent.html>
 /// [`KeyEventKind::Press`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.KeyEventKind.html>
@@ -528,26 +534,35 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.input_hooks.front()
     }
 
-    /// Makes sure background messages are displayed properly
+    /// Makes sure background messages are displayed properly. Internally this method expects a call to render
+    /// to happen directly following this call. Meaning it is only useful to be called from it's own branch in a
+    /// [`select!`] macro. Internally this is what [`spawn`] does for you. If writing your own run eval print loop
+    /// see [basic_custom.rs] for an example.
+    ///
+    /// [basic_custom.rs]: <https://github.com/WardLordRuby/repl-oxide/blob/main/examples/basic_custom.rs>
+    /// [`select!`]: <https://docs.rs/tokio/latest/tokio/macro.select.html>
+    /// [`spawn`]: LineReader::spawn
     pub fn print_background_msg<T: Display>(&mut self, msg: T) -> io::Result<()> {
         execute!(self.term, BeginSynchronizedUpdate)?;
         self.term.queue(cursor::Hide)?;
         self.move_to_beginning(self.line_len())?;
         self.term.queue(Clear(FromCursorDown))?;
-        self.println(msg.to_string())?;
-        self.cursor_at_start = false;
-        Ok(())
+        self.println(msg.to_string())
     }
 
-    /// Queues text to be displayed on the repl's writer. Replaces all new line characters with "\r\n". Supports
-    /// printing multi-line strings
+    /// Queues text to be displayed on the repl's writer to normalize accross targets. Replaces all new line
+    /// characters with "\r\n". Supports printing multi-line strings.
     ///
     /// Since repl-oxide requires full control over the terminal driver and enforces "Raw Mode" via [`build`],
     /// [`std::println!`] on UNIX systems does not display text as it normally would. This function will ensure
     /// text is printed as you would expect on all targets.
     ///
+    /// This method is designed to only be used when the repl is busy. Eg. from within a commands definition. If
+    /// you need to display text while the repl is active see: [`print_background_msg`]
+    ///
     /// If only compiling for Windows targets, the `println!` macro will display text as expected.
     ///
+    /// [`print_background_msg`]: Self::print_background_msg
     /// [`build`]: crate::builder::LineReaderBuilder::build
     #[inline]
     pub fn println<S: AsRef<str>>(&mut self, str: S) -> io::Result<()> {

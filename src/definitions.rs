@@ -17,15 +17,25 @@ pub mod callback {
     use crossterm::event::Event;
     use std::{future::Future, io, pin::Pin};
 
-    // MARK: TODO
-    // add documentation for these types
-
+    /// Callback used by [`InputHook`] for determining how [`Event`]'s are processed
+    ///
+    /// [`InputHook`]: crate::line::InputHook
+    /// [`Event`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html>
     pub type InputEventHook<Ctx, W> =
         dyn Fn(&mut LineReader<Ctx, W>, &mut Ctx, Event) -> io::Result<HookedEvent<Ctx, W>> + Send;
 
+    /// Constructor and deconstructor for an [`InputHook`]
+    ///
+    /// [`InputHook`]: crate::line::InputHook
     pub type HookLifecycle<Ctx, W> =
         dyn FnOnce(&mut LineReader<Ctx, W>, &mut Ctx) -> io::Result<()> + Send;
 
+    /// Callback to be used when you need to await operations on your generic `Ctx`
+    ///
+    /// Can be created from within an [`InputHook`] or communicated to the run eval process loop to be
+    /// immediately executed as an `FnOnce`
+    ///
+    /// [`InputHook`]: crate::line::InputHook
     pub type AsyncCallback<Ctx, W> = dyn for<'a> FnOnce(
             &mut LineReader<Ctx, W>,
             &'a mut Ctx,
