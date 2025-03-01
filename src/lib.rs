@@ -5,7 +5,6 @@ mod line;
 pub mod executor;
 
 pub use crate::definitions::*;
-pub use line::builder::*;
 pub use line::*;
 
 #[cfg(feature = "macros")]
