@@ -92,7 +92,7 @@ impl Executor<Stdout> for CommandContext {
                 Command::Quit => quit(),
             },
             Err(err) => repl_handle
-                .println(err.render().ansi().to_string())
+                .print_lines(err.render().ansi().to_string())
                 .map(|_| CommandHandle::Processed),
         }
     }

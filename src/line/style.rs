@@ -10,7 +10,7 @@ use crossterm::style::{Color, Stylize};
 const QUOTES: [char; 2] = ['\'', '\"'];
 const QUOTE_LEN: usize = QUOTES[0].len_utf8();
 
-#[derive(Default, PartialEq, Eq, Debug)]
+#[derive(Default, PartialEq, Eq)]
 enum TextColor {
     #[default]
     Yellow,

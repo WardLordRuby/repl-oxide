@@ -1,6 +1,7 @@
 mod builder;
 mod history;
 mod input_hook;
+mod print;
 mod style;
 
 /// Collection of types used for auto completion of user input
@@ -8,6 +9,7 @@ pub mod completion;
 
 pub use builder::*;
 pub use input_hook::*;
+pub use print::*;
 
 use crate::{
     ansi_code::{DIM_WHITE, RED, RESET},
@@ -74,33 +76,6 @@ impl<Ctx, W: Write> Drop for LineReader<Ctx, W> {
         execute!(self.term, cursor::Show).expect("Still accepting commands");
         crossterm::terminal::disable_raw_mode().expect("enabled on creation");
     }
-}
-
-/// Queues text to be displayed on the given writer to normalize accross targets.
-///
-/// Replaces all new line characters with "\r\n". Supports printing multi-line strings.
-///
-/// Since repl-oxide requires full control over the terminal driver and enforces "Raw Mode" via [`build`],
-/// [`std::println!`] on UNIX systems does not display text as it normally would. This function will ensure
-/// text is printed as you would expect on all targets.
-///
-/// This function is designed to only be used when the repl is busy and you do not have access to the repl
-/// handle prefer: [`LineReader::println`]. If you need to display text while the repl is active see:
-/// [`LineReader::print_background_msg`]
-///
-/// If only compiling for Windows targets, the `println!` macro will display text as expected.
-///
-/// [`build`]: crate::builder::LineReaderBuilder::build
-pub fn println<S, W>(writer: &mut W, str: S) -> io::Result<()>
-where
-    S: AsRef<str>,
-    W: Write,
-{
-    writer.queue(Print(format!(
-        "{}{NEW_LINE}",
-        str.as_ref().replace("\n", NEW_LINE)
-    )))?;
-    Ok(())
 }
 
 #[derive(Default)]
@@ -248,41 +223,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
             return Ok(());
         };
         res
-    }
-
-    /// Makes sure background messages are displayed properly. Internally this method expects a call to render
-    /// to happen directly following this call. Meaning it is only useful to be called from it's own branch in a
-    /// [`select!`] macro. Internally this is what [`spawn`] does for you. If writing your own run eval print loop
-    /// see [basic_custom.rs] for an example.
-    ///
-    /// [basic_custom.rs]: <https://github.com/WardLordRuby/repl-oxide/blob/main/examples/basic_custom.rs>
-    /// [`select!`]: <https://docs.rs/tokio/latest/tokio/macro.select.html>
-    /// [`spawn`]: LineReader::spawn
-    pub fn print_background_msg<T: Display>(&mut self, msg: T) -> io::Result<()> {
-        execute!(self.term, BeginSynchronizedUpdate)?;
-        self.term.queue(cursor::Hide)?;
-        self.move_to_beginning(self.line_len())?;
-        self.term.queue(Clear(FromCursorDown))?;
-        self.println(msg.to_string())
-    }
-
-    /// Queues text to be displayed on the repl's writer to normalize accross targets. Replaces all new line
-    /// characters with "\r\n". Supports printing multi-line strings.
-    ///
-    /// Since repl-oxide requires full control over the terminal driver and enforces "Raw Mode" via [`build`],
-    /// [`std::println!`] on UNIX systems does not display text as it normally would. This function will ensure
-    /// text is printed as you would expect on all targets.
-    ///
-    /// This method is designed to only be used when the repl is busy. Eg. from within a commands definition. If
-    /// you need to display text while the repl is active see: [`print_background_msg`]
-    ///
-    /// If only compiling for Windows targets, the `println!` macro will display text as expected.
-    ///
-    /// [`print_background_msg`]: Self::print_background_msg
-    /// [`build`]: crate::builder::LineReaderBuilder::build
-    #[inline]
-    pub fn println<S: AsRef<str>>(&mut self, str: S) -> io::Result<()> {
-        println(&mut self.term, str)
     }
 
     /// Returns if completion is currently enabled

@@ -23,10 +23,7 @@ use shellwords::split as shellwords_split;
 //     let file = loop {
 //         match std::fs::OpenOptions::new().write(true).open(n_pipe) {
 //             Ok(file) => break file,
-//             Err(_) => {
-//                 std::thread::sleep(std::time::Duration::from_millis(500));
-//                 continue;
-//             }
+//             Err(_) => std::thread::sleep(std::time::Duration::from_millis(500)),
 //         }
 //     };
 

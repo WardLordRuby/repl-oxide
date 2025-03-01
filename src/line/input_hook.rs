@@ -72,6 +72,7 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
     /// will call [`conditionally_remove_hook`] when any callback errors. When writing your own repl it is
     /// recomended to implement this logic.  
     ///
+    /// [`AsyncCallback`]: crate::callback::AsyncCallback
     /// [`with_new_uid`]: Self::with_new_uid
     /// [`conditionally_remove_hook`]: LineReader::conditionally_remove_hook
     /// [`general_event_process`]: crate::general_event_process
@@ -93,6 +94,7 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
     /// For use when creating an `InputHook` that does not contain an [`AsyncCallback`] that can error, else use
     /// [`new`].
     ///
+    /// [`AsyncCallback`]: crate::callback::AsyncCallback
     /// [`new`]: Self::new
     pub fn with_new_uid(
         init_revert: HookStates<Ctx, W>,
@@ -130,6 +132,7 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
 /// `HookUID` links an [`InputEventHook`] to all it's spawned [`AsyncCallback`]. This provides a system for
 /// dynamic [`InputHook`] termination. For more information see: [`conditionally_remove_hook`]
 ///
+/// [`AsyncCallback`]: crate::callback::AsyncCallback
 /// [`conditionally_remove_hook`]: LineReader::conditionally_remove_hook
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct HookUID(usize);

@@ -9,9 +9,7 @@ use std::{
 ///
 /// [`clap_derive::Parser`]: <https://docs.rs/clap/latest/clap/trait.Parser.html>
 #[inline]
-pub fn format_for_clap(
-    tokens: Vec<String>,
-) -> std::iter::Chain<std::iter::Once<String>, std::vec::IntoIter<String>> {
+pub fn format_for_clap(tokens: Vec<String>) -> impl Iterator<Item = String> {
     std::iter::once(String::new()).chain(tokens)
 }
 

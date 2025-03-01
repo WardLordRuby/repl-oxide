@@ -44,10 +44,13 @@ impl CommandContext {
     ) -> io::Result<OurCommandHandle> {
         repl_handle.println("Performing async tasks")?;
 
-        // MARK: XXX
-        // What is the preferred method to access the handle over thread bounds?
-        // Is it acceptable to force the user to supply the exclusive reference to
-        // the repl's writer?
+        // repl-oxide currently does not have an interface for accessing the supplied writer accross thread
+        // bounds. Generally it works well to just print after tasks have ran to completion or for persistent
+        // tasks via channel and `print_background_message` see: 'examples/spawner.rs' or
+        // 'examples/basic_custom.rs'. However, most of the time it will be possible to construct new exclusive
+        // references and the `println` function will work just fine.
+
+        // Refer to documentaion on `println` / `print_lines` for why they are used instead of `std::println!`.
 
         let t_1 = tokio::spawn(async {
             sleep(Duration::from_secs(1)).await;
@@ -91,7 +94,7 @@ impl Executor<Stdout> for CommandContext {
                 Command::Quit => Ok(CommandHandle::Exit),
             },
             Err(err) => repl_handle
-                .println(err.render().ansi().to_string())
+                .print_lines(err.render().ansi().to_string())
                 .map(|_| CommandHandle::Processed),
         }
     }
