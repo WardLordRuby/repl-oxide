@@ -12,7 +12,7 @@ pub mod ansi_code {
 
 /// Collection of callbacks that allow for deeper library control
 pub mod callback {
-    use crate::line::{CallbackErr, HookedEvent, LineReader};
+    use crate::line::{CallbackErr, HookedEvent, Repl};
 
     use crossterm::event::Event;
     use std::{future::Future, io, pin::Pin};
@@ -22,13 +22,13 @@ pub mod callback {
     /// [`InputHook`]: crate::line::InputHook
     /// [`Event`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html>
     pub type InputEventHook<Ctx, W> =
-        dyn Fn(&mut LineReader<Ctx, W>, &mut Ctx, Event) -> io::Result<HookedEvent<Ctx, W>> + Send;
+        dyn Fn(&mut Repl<Ctx, W>, &mut Ctx, Event) -> io::Result<HookedEvent<Ctx, W>> + Send;
 
     /// Constructor and deconstructor for an [`InputHook`]
     ///
     /// [`InputHook`]: crate::line::InputHook
     pub type HookLifecycle<Ctx, W> =
-        dyn FnOnce(&mut LineReader<Ctx, W>, &mut Ctx) -> io::Result<()> + Send;
+        dyn FnOnce(&mut Repl<Ctx, W>, &mut Ctx) -> io::Result<()> + Send;
 
     /// Callback to be used when you need to await operations on your generic `Ctx`
     ///
@@ -38,7 +38,7 @@ pub mod callback {
     /// [`HookedEvent`]: crate::line::HookedEvent
     /// [`InputHook`]: crate::line::InputHook
     pub type AsyncCallback<Ctx, W> = dyn for<'a> FnOnce(
-            &mut LineReader<Ctx, W>,
+            &mut Repl<Ctx, W>,
             &'a mut Ctx,
         )
             -> Pin<Box<dyn Future<Output = Result<(), CallbackErr>> + Send + 'a>>

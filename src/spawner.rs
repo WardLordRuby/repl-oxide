@@ -1,4 +1,4 @@
-use crate::{executor::Executor, general_event_process, line::LineReader};
+use crate::{executor::Executor, general_event_process, line::Repl};
 
 use std::{
     fmt::Display,
@@ -9,7 +9,7 @@ use crossterm::event::EventStream;
 use tokio::{sync::mpsc::Sender, task::JoinHandle};
 use tokio_stream::StreamExt;
 
-impl<Ctx, W> LineReader<Ctx, W>
+impl<Ctx, W> Repl<Ctx, W>
 where
     Ctx: Executor<W> + Send + 'static,
     W: Write + Send + 'static,

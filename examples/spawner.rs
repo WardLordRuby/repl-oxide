@@ -4,7 +4,7 @@
 use repl_oxide::{
     ansi_code::{GREEN, RED, RESET},
     executor::{format_for_clap, CommandHandle, Executor},
-    repl_builder, LineReader,
+    repl_builder, Repl,
 };
 
 use std::{
@@ -29,8 +29,6 @@ enum Command {
     Quit,
 }
 
-type OurCommandHandle = CommandHandle<CommandContext, Stdout>;
-
 // Our context can store all persistent state. Commands can also be implemented on our
 // context. See: 'examples/runner.rs'
 struct CommandContext;
@@ -38,9 +36,9 @@ struct CommandContext;
 impl Executor<Stdout> for CommandContext {
     async fn try_execute_command(
         &mut self,
-        repl_handle: &mut LineReader<Self, Stdout>,
+        repl_handle: &mut Repl<Self, Stdout>,
         user_tokens: Vec<String>,
-    ) -> io::Result<OurCommandHandle> {
+    ) -> io::Result<CommandHandle<Self, Stdout>> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
             Ok(command) => match command {
                 Command::Quit => Ok(CommandHandle::Exit),

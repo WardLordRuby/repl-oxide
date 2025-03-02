@@ -1,6 +1,6 @@
 use crate::{
     callback::{HookLifecycle, InputEventHook},
-    line::{EventLoop, LineReader},
+    line::{EventLoop, Repl},
 };
 
 use std::{
@@ -14,26 +14,25 @@ static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
 
 /// Powerful type that allows customization of library default implementations
 ///
-/// `InputHook` gives you access to customize how [`Event`]'s are processed and how the [`LineReader`]
+/// `InputHook` gives you access to customize how [`Event`]'s are processed and how the [`Repl`]
 /// behaves.
 ///
 /// Hooks can be initialized with a [`HookLifecycle`] that allows for a place to modify the current state
-/// of the [`LineReader`] and/or the users generic `Ctx`. To do so use [`new_hook_states`], note you must
-/// also supply a seperate callback to revert the changes back to your desired state when the `InputHook`
-/// is dropped.
+/// of the [`Repl`] and/or the users generic `Ctx`. To do so use [`new_hook_states`], note you must also
+/// supply a seperate callback to revert the changes back to your desired state when the `InputHook` is dropped.
 ///
 /// Otherwise use [`no_state_change`] to not specify new and previous states.
 ///
 /// Hooks require a [`InputEventHook`] this callback can be is entirely responsible for controlling _all_
 /// reactions to [`KeyEvent`]'s of kind: [`KeyEventKind::Press`]. This will act as a manual overide of the
 /// libraries event processor. You will have access to manually determine what methods are called on the
-/// [`LineReader`]. See: [callbacks.rs]
+/// [`Repl`]. See: [callbacks.rs]
 ///
 /// [callbacks.rs]: <https://github.com/WardLordRuby/repl-oxide/blob/main/examples/callbacks.rs>
 /// [`Event`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html>
 /// [`KeyEvent`]: <https://docs.rs/crossterm/latest/crossterm/event/struct.KeyEvent.html>
 /// [`KeyEventKind::Press`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.KeyEventKind.html>
-/// [`conditionally_remove_hook`]: LineReader::conditionally_remove_hook
+/// [`conditionally_remove_hook`]: Repl::conditionally_remove_hook
 /// [`new_hook_states`]: InputHook::new_hook_states
 /// [`no_state_change`]: InputHook::no_state_change
 pub struct InputHook<Ctx, W: Write> {
@@ -74,10 +73,10 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
     ///
     /// [`AsyncCallback`]: crate::callback::AsyncCallback
     /// [`with_new_uid`]: Self::with_new_uid
-    /// [`conditionally_remove_hook`]: LineReader::conditionally_remove_hook
+    /// [`conditionally_remove_hook`]: Repl::conditionally_remove_hook
     /// [`general_event_process`]: crate::general_event_process
-    /// [`run`]: crate::line::LineReader::run
-    /// [`spawn`]: crate::line::LineReader::spawn
+    /// [`run`]: crate::line::Repl::run
+    /// [`spawn`]: crate::line::Repl::spawn
     pub fn new(
         uid: HookUID,
         init_revert: HookStates<Ctx, W>,
@@ -114,7 +113,7 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
         HookStates::default()
     }
 
-    /// For use when creating an `InputHook` that changes the state of the [`LineReader`] or the user
+    /// For use when creating an `InputHook` that changes the state of the [`Repl`] or the user
     /// supplied generic `Ctx` on construction and deconstruction.
     pub fn new_hook_states(
         init: Box<HookLifecycle<Ctx, W>>,
@@ -133,7 +132,7 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
 /// dynamic [`InputHook`] termination. For more information see: [`conditionally_remove_hook`]
 ///
 /// [`AsyncCallback`]: crate::callback::AsyncCallback
-/// [`conditionally_remove_hook`]: LineReader::conditionally_remove_hook
+/// [`conditionally_remove_hook`]: Repl::conditionally_remove_hook
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct HookUID(usize);
 
@@ -181,7 +180,7 @@ impl Display for CallbackErr {
 /// Marker to tell [`process_input_event`] to keep the [`InputEventHook`] active, (`Continue`), or to drop
 /// it and run the [`HookStates`] revert callback if one was set when creating the `InputHook`, (`Release`).
 ///
-/// [`process_input_event`]: LineReader::process_input_event
+/// [`process_input_event`]: Repl::process_input_event
 pub enum HookControl {
     Continue,
     Release,
@@ -236,7 +235,7 @@ impl<Ctx, W: Write> HookedEvent<Ctx, W> {
     }
 }
 
-impl<Ctx, W: Write> LineReader<Ctx, W> {
+impl<Ctx, W: Write> Repl<Ctx, W> {
     /// Queues an [`InputHook`] for execution
     #[inline]
     pub fn register_input_hook(&mut self, input_hook: InputHook<Ctx, W>) {
@@ -253,7 +252,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// ```ignore
     /// EventLoop::AsyncCallback(callback) => {
     ///     if let Err(err) = callback(&mut line_handle, &mut command_context).await {
-    ///         line_handle.println(err.to_string())?;
+    ///         line_handle.eprintln(err)?;
     ///         line_handle.conditionally_remove_hook(&err)?;
     ///     }
     /// },

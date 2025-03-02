@@ -1,4 +1,4 @@
-use crate::line::LineReader;
+use crate::line::Repl;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -459,8 +459,7 @@ impl From<&'static CommandScheme> for Completion {
 /// The goal of `Completion` is to provide efficent lookups to the correct data that should be used to
 /// compute the best recommendations for the user with any given input. `Completion` also holds the current
 /// line state in field `input` `CompletionState` aims to provide accurate slices into the string
-/// `LineReader.line.input` since this struct is nested within `LineReader` we manage str slicing by
-/// indexes and lens  
+/// `Repl.line.input` since this struct is nested within `Repl` we manage str slicing by indexes and lens  
 #[derive(Default)]
 pub struct Completion {
     pub(super) recommendations: Vec<&'static str>,
@@ -936,7 +935,7 @@ impl Completion {
     }
 }
 
-impl<Ctx, W: Write> LineReader<Ctx, W> {
+impl<Ctx, W: Write> Repl<Ctx, W> {
     #[inline]
     fn curr_token(&self) -> &str {
         &self.completion.input.ending.token
@@ -1051,7 +1050,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         let line_trim_start = self.line.input.trim_start();
         if line_trim_start.is_empty() {
             // `comp_enabled` can only be set when `!Completion.is_empty()` via checks in `enable_completion` and
-            // `LineReaderBuilder::build`. Making it safe to call `default_recomendations` here
+            // `ReplBuilder::build`. Making it safe to call `default_recomendations` here
             self.completion.set_default_recommendations_unchecked();
             self.line.err = false;
             self.completion.input.ending = LineEnd::default();

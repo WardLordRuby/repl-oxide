@@ -1,7 +1,7 @@
 use crate::line::{
     completion::{CommandScheme, Completion},
     history::History,
-    LineData, LineReader,
+    LineData, Repl,
 };
 
 use std::io::{self, ErrorKind, Write};
@@ -37,7 +37,7 @@ use shellwords::split as shellwords_split;
 /// Builder for custom REPL's
 ///
 /// Access through [`repl_builder`]
-pub struct LineReaderBuilder<'a, W: Write> {
+pub struct ReplBuilder<'a, W: Write> {
     completion: Option<&'static CommandScheme>,
     custom_quit: Option<&'a str>,
     term: W,
@@ -48,13 +48,13 @@ pub struct LineReaderBuilder<'a, W: Write> {
     style_enabled: bool,
 }
 
-/// Builder for [`LineReader`]
+/// Builder for [`Repl`]
 ///
-/// `LineReader` must include a terminal that is compatable with executing commands via the `crossterm` crate.
-pub fn repl_builder<W: Write>(terminal: W) -> LineReaderBuilder<'static, W> {
+/// `Repl` must include a terminal that is compatable with executing commands via the `crossterm` crate.
+pub fn repl_builder<W: Write>(terminal: W) -> ReplBuilder<'static, W> {
     // await_debug_server(r"\\.\pipe\debug_log");
 
-    LineReaderBuilder {
+    ReplBuilder {
         completion: None,
         custom_quit: None,
         term: terminal,
@@ -66,7 +66,7 @@ pub fn repl_builder<W: Write>(terminal: W) -> LineReaderBuilder<'static, W> {
     }
 }
 
-impl<'a, W: Write> LineReaderBuilder<'a, W> {
+impl<'a, W: Write> ReplBuilder<'a, W> {
     /// Supply a custom command to be executed when the user tries to quit with 'ctrl + c' when the current
     /// line is empty, or anytime 'ctrl + d' is entered. If none is supplied [`EventLoop::Break`] will be
     /// returned.
@@ -78,7 +78,7 @@ impl<'a, W: Write> LineReaderBuilder<'a, W> {
     }
 }
 
-impl<W: Write> LineReaderBuilder<'_, W> {
+impl<W: Write> ReplBuilder<'_, W> {
     /// Specify a starting size the the terminal should be set to on [`build`] if no size is supplied then
     /// size is found with a call to [`terminal::size`]
     ///
@@ -125,7 +125,7 @@ impl<W: Write> LineReaderBuilder<'_, W> {
         self
     }
 
-    /// Builds a [`LineReader`] that you can manually turn into a repl or call [`run`] / [`spawn`]
+    /// Builds a [`Repl`] that you can manually turn into a repl or call [`run`] / [`spawn`]
     /// on to start or spawn the repl process
     ///
     /// This function can return an `Err` if
@@ -135,11 +135,11 @@ impl<W: Write> LineReaderBuilder<'_, W> {
     ///
     /// This function will panic if an ill formed [`&'static CommandScheme`] was supplied
     ///
-    /// [`run`]: crate::line::LineReader::run
-    /// [`spawn`]: crate::line::LineReader::spawn
+    /// [`run`]: crate::line::Repl::run
+    /// [`spawn`]: crate::line::Repl::spawn
     /// [`&'static CommandScheme`]: crate::completion::CommandScheme
     /// [`terminal::size`]: <https://docs.rs/crossterm/latest/crossterm/terminal/fn.size.html>
-    pub fn build<Ctx>(mut self) -> io::Result<LineReader<Ctx, W>> {
+    pub fn build<Ctx>(mut self) -> io::Result<Repl<Ctx, W>> {
         let term_size = match self.term_size {
             Some((columns, rows)) => {
                 self.term.queue(terminal::SetSize(columns, rows))?;
@@ -161,7 +161,7 @@ impl<W: Write> LineReaderBuilder<'_, W> {
         crossterm::terminal::enable_raw_mode()?;
         self.term.queue(cursor::EnableBlinking)?;
 
-        Ok(LineReader::new(
+        Ok(Repl::new(
             LineData::new(
                 self.prompt,
                 self.prompt_end,

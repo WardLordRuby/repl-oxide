@@ -4,7 +4,7 @@
 use repl_oxide::{
     callback::{HookLifecycle, InputEventHook},
     executor::{format_for_clap, CommandHandle, Executor},
-    repl_builder, HookedEvent, InputHook, LineReader,
+    repl_builder, HookedEvent, InputHook, Repl,
 };
 
 use std::io::{self, Stdout};
@@ -84,9 +84,9 @@ fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {
 impl Executor<Stdout> for CommandContext {
     async fn try_execute_command(
         &mut self,
-        repl_handle: &mut LineReader<Self, Stdout>,
+        repl_handle: &mut Repl<Self, Stdout>,
         user_tokens: Vec<String>,
-    ) -> io::Result<CommandHandle<CommandContext, Stdout>> {
+    ) -> io::Result<CommandHandle<Self, Stdout>> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
             Ok(command) => match command {
                 Command::Quit => quit(),
@@ -100,7 +100,7 @@ impl Executor<Stdout> for CommandContext {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    // Build and run a new `LineReader` with a custom quit command "quit" (given string will be ran through
+    // Build and run a new `Repl` with a custom quit command "quit" (given string will be ran through
     // `try_execute_command`) to be ran if the user tries to quit with 'ctrl + c' (when the line is empty)
     // or 'ctrl + d'
     repl_builder(io::stdout())

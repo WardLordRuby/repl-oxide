@@ -1,4 +1,4 @@
-use crate::line::{completion::Direction, LineReader};
+use crate::line::{completion::Direction, Repl};
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -99,7 +99,7 @@ fn hash_str(str: &str) -> u64 {
     hasher.finish()
 }
 
-impl<Ctx, W: Write> LineReader<Ctx, W> {
+impl<Ctx, W: Write> Repl<Ctx, W> {
     /// Pushes onto history and resets the internal history index to the top
     #[inline]
     pub fn add_to_history(&mut self, add: &str) {

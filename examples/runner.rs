@@ -3,7 +3,7 @@
 
 use repl_oxide::{
     executor::{format_for_clap, CommandHandle, Executor},
-    println, repl_builder, LineReader,
+    println, repl_builder, Repl,
 };
 
 use std::io::{self, Stdout};
@@ -29,8 +29,6 @@ enum Command {
     Quit,
 }
 
-type OurCommandHandle = CommandHandle<CommandContext, Stdout>;
-
 // Our context can store all persistent state
 #[derive(Default)]
 struct CommandContext {
@@ -40,8 +38,8 @@ struct CommandContext {
 // Commands can be implemented on our context
 impl CommandContext {
     async fn async_test(
-        repl_handle: &mut LineReader<Self, Stdout>,
-    ) -> io::Result<OurCommandHandle> {
+        repl_handle: &mut Repl<Self, Stdout>,
+    ) -> io::Result<CommandHandle<Self, Stdout>> {
         repl_handle.println("Performing async tasks")?;
 
         // repl-oxide currently does not have an interface for accessing the supplied writer accross thread
@@ -70,9 +68,9 @@ impl CommandContext {
 
     fn count(
         &mut self,
-        repl_handle: &mut LineReader<Self, Stdout>,
+        repl_handle: &mut Repl<Self, Stdout>,
         add: Option<Vec<isize>>,
-    ) -> io::Result<OurCommandHandle> {
+    ) -> io::Result<CommandHandle<Self, Stdout>> {
         if let Some(numbers) = add {
             numbers.into_iter().for_each(|n| self.count += n);
         }
@@ -84,9 +82,9 @@ impl CommandContext {
 impl Executor<Stdout> for CommandContext {
     async fn try_execute_command(
         &mut self,
-        repl_handle: &mut LineReader<Self, Stdout>,
+        repl_handle: &mut Repl<Self, Stdout>,
         user_tokens: Vec<String>,
-    ) -> io::Result<OurCommandHandle> {
+    ) -> io::Result<CommandHandle<Self, Stdout>> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
             Ok(command) => match command {
                 Command::Count { numbers } => self.count(repl_handle, numbers),

@@ -4,7 +4,7 @@
 use repl_oxide::{
     completion::{CommandScheme, InnerScheme, Parent, RecData, RecKind},
     executor::{format_for_clap, CommandHandle, Executor},
-    repl_builder, LineReader,
+    repl_builder, Repl,
 };
 
 use std::io::{self, Stdout};
@@ -176,8 +176,6 @@ const ROLL_INNER: [InnerScheme; 1] = [
     ),
 ];
 
-type OurCommandHandle = CommandHandle<CommandContext, Stdout>;
-
 // Our context can store all default/persistent state
 struct CommandContext {
     dice_sides: u8,
@@ -193,9 +191,9 @@ impl Default for CommandContext {
 impl CommandContext {
     fn roll(
         &mut self,
-        repl_handle: &mut LineReader<Self, Stdout>,
+        repl_handle: &mut Repl<Self, Stdout>,
         input_dice: Option<u8>,
-    ) -> io::Result<OurCommandHandle> {
+    ) -> io::Result<CommandHandle<Self, Stdout>> {
         if let Some(side_count) = input_dice {
             if side_count != self.dice_sides {
                 self.dice_sides = side_count;
@@ -212,9 +210,9 @@ impl CommandContext {
     }
 
     fn echo(
-        repl_handle: &mut LineReader<Self, Stdout>,
+        repl_handle: &mut Repl<Self, Stdout>,
         mut args: EchoArgs,
-    ) -> io::Result<OurCommandHandle> {
+    ) -> io::Result<CommandHandle<Self, Stdout>> {
         if args.reverse {
             args.string = args.string.chars().rev().collect()
         }
@@ -235,9 +233,9 @@ impl CommandContext {
 impl Executor<Stdout> for CommandContext {
     async fn try_execute_command(
         &mut self,
-        repl_handle: &mut LineReader<Self, Stdout>,
+        repl_handle: &mut Repl<Self, Stdout>,
         user_tokens: Vec<String>,
-    ) -> io::Result<OurCommandHandle> {
+    ) -> io::Result<CommandHandle<Self, Stdout>> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
             Ok(command) => match command {
                 Command::Echo { args } => CommandContext::echo(repl_handle, args),

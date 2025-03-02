@@ -1,4 +1,4 @@
-use crate::line::{InputHook, LineReader};
+use crate::line::{InputHook, Repl};
 
 use std::{
     future::Future,
@@ -59,14 +59,14 @@ pub enum CommandHandle<Ctx, W: Write> {
 /// }
 /// ```
 /// [`Stdout`]: std::io::Stdout
-/// [`run`]: crate::line::LineReader::run
-/// [`spawn`]: crate::line::LineReader::spawn
+/// [`run`]: crate::line::Repl::run
+/// [`spawn`]: crate::line::Repl::spawn
 /// [`try_parse_from`]: <https://docs.rs/clap/latest/clap/trait.Parser.html#method.try_parse_from>
 /// [`clap_derive::Parser`]: <https://docs.rs/clap/latest/clap/trait.Parser.html>
 pub trait Executor<W: Write + Send>: Sized + Send {
     fn try_execute_command(
         &mut self,
-        line_handle: &mut LineReader<Self, W>,
+        line_handle: &mut Repl<Self, W>,
         user_tokens: Vec<String>,
     ) -> impl Future<Output = io::Result<CommandHandle<Self, W>>> + Send;
 }

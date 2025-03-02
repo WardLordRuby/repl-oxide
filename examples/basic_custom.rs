@@ -4,7 +4,7 @@
 use repl_oxide::{
     ansi_code::{RED, RESET},
     executor::{format_for_clap, CommandHandle, Executor},
-    general_event_process, repl_builder, LineReader, StreamExt,
+    general_event_process, repl_builder, Repl, StreamExt,
 };
 
 use std::{
@@ -29,8 +29,6 @@ enum Command {
     Quit,
 }
 
-type OurCommandHandle = CommandHandle<CommandContext, Stdout>;
-
 // Our context can store all persistent state. Commands can also be implemented on our
 // context. See: 'examples/runner.rs'
 struct CommandContext;
@@ -40,9 +38,9 @@ struct CommandContext;
 impl Executor<Stdout> for CommandContext {
     async fn try_execute_command(
         &mut self,
-        repl_handle: &mut LineReader<Self, Stdout>,
+        repl_handle: &mut Repl<Self, Stdout>,
         user_tokens: Vec<String>,
-    ) -> io::Result<OurCommandHandle> {
+    ) -> io::Result<CommandHandle<Self, Stdout>> {
         match Command::try_parse_from(format_for_clap(user_tokens)) {
             Ok(command) => match command {
                 Command::Quit => Ok(CommandHandle::Exit),
@@ -89,7 +87,7 @@ async fn main() -> io::Result<()> {
     // Create our type that implements `Executor`
     let mut command_ctx = CommandContext;
 
-    // Build a default `LineReader` to handle the repl state
+    // Build a default `Repl` to handle the repl state
     let mut repl = repl_builder(io::stdout())
         .build()
         .expect("input writer accepts crossterm commands");

@@ -56,7 +56,7 @@ const DEFAULT_PROMPT_LEN: u16 = DEFAULT_PROMPT.len() as u16 + DEFAULT_SEPARATOR.
 const NEW_LINE: &str = "\r\n";
 
 /// Holds all context for REPL events
-pub struct LineReader<Ctx, W: Write> {
+pub struct Repl<Ctx, W: Write> {
     completion: Completion,
     line: LineData,
     history: History,
@@ -71,7 +71,7 @@ pub struct LineReader<Ctx, W: Write> {
     input_hooks: VecDeque<InputHook<Ctx, W>>,
 }
 
-impl<Ctx, W: Write> Drop for LineReader<Ctx, W> {
+impl<Ctx, W: Write> Drop for Repl<Ctx, W> {
     fn drop(&mut self) {
         execute!(self.term, cursor::Show).expect("Still accepting commands");
         crossterm::terminal::disable_raw_mode().expect("enabled on creation");
@@ -158,13 +158,13 @@ impl Display for ParseErr {
 ///
 /// `EventLoop` enum acts as a control router for how your read eval print loop should react to input events.
 /// It provides mutable access back to your `Ctx` both synchronously and asynchronously. If your callback
-/// can error the [`conditionally_remove_hook`] method can restore the intial state of the `LineReader` as
+/// can error the [`conditionally_remove_hook`] method can restore the intial state of the `Repl` as
 /// well as remove the queued input hook that was responsible for spawning the callback that resulted in an
 /// error.  
 ///
 /// `TryProcessInput` uses [`shellwords::split`] to parse user input into common shell tokens.
 ///
-/// [`conditionally_remove_hook`]: LineReader::conditionally_remove_hook
+/// [`conditionally_remove_hook`]: Repl::conditionally_remove_hook
 /// [`shellwords::split`]: <https://docs.rs/shell-words/latest/shell_words/fn.split.html>
 pub enum EventLoop<Ctx, W: Write> {
     Continue,
@@ -173,7 +173,7 @@ pub enum EventLoop<Ctx, W: Write> {
     TryProcessInput(Result<Vec<String>, ParseErr>),
 }
 
-impl<Ctx, W: Write> LineReader<Ctx, W> {
+impl<Ctx, W: Write> Repl<Ctx, W> {
     #[inline]
     fn new(
         line: LineData,
@@ -361,8 +361,8 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// line_handle.clear_unwanted_inputs(&mut reader).await?;
     /// line_handle.render()?;
     /// ```
-    /// [`run`]: crate::line::LineReader::run
-    /// [`spawn`]: crate::line::LineReader::spawn
+    /// [`run`]: crate::line::Repl::run
+    /// [`spawn`]: crate::line::Repl::spawn
     pub fn render(&mut self, context: &mut Ctx) -> io::Result<()> {
         if std::mem::take(&mut self.uneventful) {
             return Ok(());
@@ -576,7 +576,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// If a [custom quit command] is set this will tell the read eval print loop to process the set command
     /// otherwise will return [`EventLoop::Break`]  
     ///
-    /// [custom quit command]: crate::LineReaderBuilder::with_custom_quit_command
+    /// [custom quit command]: crate::ReplBuilder::with_custom_quit_command
     /// [`EventLoop::Break`]: crate::line::EventLoop
     pub fn process_close_signal(&mut self) -> io::Result<EventLoop<Ctx, W>> {
         self.clear_line()?;
@@ -594,9 +594,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// Example read eval print loop assuming we have a `Ctx`, `command_context`,  that implements
     /// [`Executor`]
     ///
-    /// See: [`process_async_callback!`], for reducing boilerplate for callbacks if you plan to use the tracing
-    /// crate for error logging
-    ///
     /// ```ignore
     /// let mut reader = crossterm::event::EventStream::new();
     /// let mut line_handle = repl_builder(std::io::stdout())
@@ -613,7 +610,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///             EventLoop::Break => break,
     ///             EventLoop::AsyncCallback(callback) => {
     ///                 if let Err(err) = callback(&mut line_handle, &mut command_context).await {
-    ///                     line_handle.println(err.to_string())?;
+    ///                     line_handle.eprintln(err)?;
     ///                     line_handle.conditionally_remove_hook(&err)?;
     ///                 }
     ///             },
@@ -625,7 +622,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     ///                 }
     ///             }
     ///             EventLoop::TryProcessInput(Err(mismatched_quotes)) => {
-    ///                 line_handle.println(mismatched_quotes.to_string())?;
+    ///                 line_handle.eprintln(mismatched_quotes)?;
     ///             },
     ///         }
     ///     }
@@ -633,7 +630,6 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// ```
     ///
     /// [`Executor`]: crate::executor::Executor
-    /// [`process_async_callback!`]: crate::process_async_callback
     pub fn process_input_event(
         &mut self,
         context: &mut Ctx,

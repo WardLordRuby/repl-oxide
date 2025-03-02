@@ -4,9 +4,6 @@ mod line;
 /// Collection of types used to implment the `Executor` trait
 pub mod executor;
 
-pub use crate::definitions::*;
-pub use line::*;
-
 #[cfg(feature = "macros")]
 #[doc(hidden)]
 pub mod macros;
@@ -18,6 +15,9 @@ pub mod runner;
 #[cfg(feature = "spawner")]
 #[doc(hidden)]
 pub mod spawner;
+
+pub use crate::definitions::*;
+pub use line::*;
 
 /// Re-export of [`strip_ansi`] the ported chalk regex
 ///
