@@ -84,7 +84,7 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
         event_hook: Box<InputEventHook<Ctx, W>>,
     ) -> Self {
         assert!(uid.0 < HOOK_UID.load(Ordering::SeqCst));
-        InputHook {
+        Self {
             uid,
             init_revert,
             event_hook,
@@ -100,7 +100,7 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
         init_revert: HookStates<Ctx, W>,
         event_hook: Box<InputEventHook<Ctx, W>>,
     ) -> Self {
-        InputHook {
+        Self {
             uid: HookUID::new(),
             init_revert,
             event_hook,
@@ -163,7 +163,7 @@ impl CallbackErr {
     /// Ensure `uid` is the same [`HookUID`] you pass to [`InputHook::new`]
     #[inline]
     pub fn new<T: Into<Cow<'static, str>>>(uid: HookUID, err: T) -> Self {
-        CallbackErr {
+        Self {
             uid,
             err: err.into(),
         }
@@ -246,7 +246,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     /// Removes the currently active [`InputEventHook`] and calls its destructor if the hooks UID matches the
     /// UID of the provided error. Return values:
     /// - `Err(io::Error)` hook removed and destructor returned err
-    /// - `Ok(true)` hook removed and destructor succeeded
+    /// - `Ok(true)` hook removed and destructor succeeded or input hook had no destructor set
     /// - `Ok(false)` no hook to remove or queued hook UID does not match the UID of the given `err`
     ///
     /// Eg:
@@ -271,7 +271,8 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 .pop_input_hook()
                 .expect("`next_input_hook` & `pop_input_hook` both look at first queued hook");
             return self
-                .try_run_reset_callback(context, hook.init_revert)
+                .try_revert_input_hook(context, hook)
+                .unwrap_or(Ok(()))
                 .map(|_| true);
         }
         Ok(false)
@@ -279,7 +280,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
 
     /// Pops the first queued `input_hook`
     #[inline]
-    pub(crate) fn pop_input_hook(&mut self) -> Option<InputHook<Ctx, W>> {
+    pub(super) fn pop_input_hook(&mut self) -> Option<InputHook<Ctx, W>> {
         self.input_hooks.pop_front()
     }
 
@@ -289,17 +290,15 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         self.input_hooks.front()
     }
 
-    /// Run the reset state callback if present
+    /// Run the revert state callback on the given `InputHook` if present
     #[inline]
-    pub(super) fn try_run_reset_callback(
+    pub(super) fn try_revert_input_hook(
         &mut self,
         context: &mut Ctx,
-        to: HookStates<Ctx, W>,
-    ) -> io::Result<()> {
-        let Some(reset) = to.revert else {
-            return Ok(());
-        };
-        reset(self, context)
+        hook: InputHook<Ctx, W>,
+    ) -> Option<io::Result<()>> {
+        let revert = hook.init_revert.revert?;
+        Some(revert(self, context))
     }
 
     /// Makes sure the current `input_hook`'s initializer has been executed

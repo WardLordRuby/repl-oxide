@@ -7,7 +7,7 @@ use std::{
 };
 
 #[derive(Default)]
-pub(crate) struct History {
+pub(super) struct History {
     prev_entries: BTreeMap<usize, String>,
     value_order_map: HashMap<u64, usize>,
     top: usize,
@@ -29,28 +29,28 @@ impl History {
 
     /// Items yield from most recent to oldest
     #[inline]
-    pub(crate) fn iter(&self) -> impl Iterator<Item = (&usize, &String)> {
+    pub(super) fn iter(&self) -> impl Iterator<Item = (&usize, &String)> {
         self.prev_entries.iter().rev()
     }
 
     /// Returns the most recent entry
     #[inline]
-    pub(crate) fn last(&self) -> Option<&str> {
+    pub(super) fn last(&self) -> Option<&str> {
         self.prev_entries.values().next_back().map(String::as_str)
     }
 
     /// Returns the entry at a given position  
     #[inline]
-    pub(crate) fn get(&self, position: &usize) -> Option<&String> {
+    pub(super) fn get(&self, position: &usize) -> Option<&String> {
         self.prev_entries.get(position)
     }
 
     #[inline]
-    pub(crate) fn reset_idx(&mut self) {
+    pub(super) fn reset_idx(&mut self) {
         self.curr_pos = self.top;
     }
 
-    pub(crate) fn push(&mut self, mut add: &str) {
+    pub(super) fn push(&mut self, mut add: &str) {
         add = add.trim();
 
         if self.last().is_some_and(|entry| entry == add) {

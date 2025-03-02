@@ -96,7 +96,7 @@ pub struct RecData {
     // Index of rec in `recs` -> short char
     recs: Option<&'static [&'static str]>,
     /// Kind of data stored
-    pub(crate) kind: RecKind,
+    pub(super) kind: RecKind,
     /// Signals this is a leaf node
     end: bool,
 }
@@ -280,7 +280,7 @@ pub enum Direction {
 
 impl Direction {
     #[inline]
-    pub(crate) fn to_int(&self) -> i8 {
+    fn to_int(&self) -> i8 {
         match self {
             Direction::Next => 1,
             Direction::Previous => -1,
@@ -463,7 +463,7 @@ impl From<&'static CommandScheme> for Completion {
 /// indexes and lens  
 #[derive(Default)]
 pub struct Completion {
-    pub(crate) recommendations: Vec<&'static str>,
+    pub(super) recommendations: Vec<&'static str>,
     input: CompletionState,
     indexer: Indexer,
     rec_list: Vec<&'static RecData>,
@@ -719,7 +719,7 @@ impl SliceData {
 
 impl Completion {
     #[inline]
-    pub(crate) fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.rec_list.is_empty()
     }
 
@@ -729,7 +729,7 @@ impl Completion {
     /// in that case this method would be pointless to call since it does not have any `RecData`
     ///
     /// [`recommendation`]: Completion
-    pub(crate) fn rec_data_from_index(&self, recomendation_i: i8) -> &RecData {
+    pub(super) fn rec_data_from_index(&self, recomendation_i: i8) -> &RecData {
         if !self.indexer.multiple {
             return self.rec_list[self.indexer.list.0];
         }
@@ -917,7 +917,7 @@ impl Completion {
 
     /// Returns `Some(true)` or `Some(false)` if the given `kind` should be formatted as an argument or  
     /// `None` if there is no applicable formatting. eg. `RecKind::UserDefined` or `RecKind::Null`
-    pub(crate) fn arg_format(&self, kind: &RecKind) -> Option<bool> {
+    pub(super) fn arg_format(&self, kind: &RecKind) -> Option<bool> {
         match kind {
             RecKind::Argument(_) => Some(true),
             RecKind::Value(_) | RecKind::Command => Some(false),
@@ -1455,7 +1455,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     }
 
     /// Clears all state found by the completion module
-    pub(crate) fn reset_completion(&mut self) {
+    pub(super) fn reset_completion(&mut self) {
         self.line.err = false;
         if self.completion.is_empty() {
             self.completion.input.ending = LineEnd::default();

@@ -57,9 +57,9 @@ const NEW_LINE: &str = "\r\n";
 
 /// Holds all context for REPL events
 pub struct LineReader<Ctx, W: Write> {
-    pub(crate) completion: Completion,
-    pub(crate) line: LineData,
-    pub(crate) history: History,
+    completion: Completion,
+    line: LineData,
+    history: History,
     ghost_text: Option<GhostTextMeta>,
     term: W,
     /// (columns, rows)
@@ -79,19 +79,19 @@ impl<Ctx, W: Write> Drop for LineReader<Ctx, W> {
 }
 
 #[derive(Default)]
-pub(crate) struct LineData {
-    pub(crate) prompt: String,
-    pub(crate) prompt_separator: String,
-    pub(crate) input: String,
-    pub(crate) comp_enabled: bool,
-    pub(crate) style_enabled: bool,
-    pub(crate) err: bool,
+struct LineData {
+    prompt: String,
+    prompt_separator: String,
+    input: String,
+    comp_enabled: bool,
+    style_enabled: bool,
+    err: bool,
     len: u16,
     prompt_len: u16,
 }
 
 impl LineData {
-    pub(crate) fn new(
+    fn new(
         prompt: Option<String>,
         prompt_separator: Option<String>,
         style_enabled: bool,
@@ -120,7 +120,7 @@ impl LineData {
     }
 
     #[inline]
-    pub(crate) fn found_err(&mut self, found: bool) {
+    fn found_err(&mut self, found: bool) {
         self.err = found
     }
 }
@@ -175,7 +175,7 @@ pub enum EventLoop<Ctx, W: Write> {
 
 impl<Ctx, W: Write> LineReader<Ctx, W> {
     #[inline]
-    pub(crate) fn new(
+    fn new(
         line: LineData,
         term: W,
         term_size: (u16, u16),
@@ -330,7 +330,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
         line_len % self.term_size.0
     }
 
-    pub(crate) fn move_to_beginning(&mut self, from: u16) -> io::Result<()> {
+    fn move_to_beginning(&mut self, from: u16) -> io::Result<()> {
         let line_height = self.line_height(from);
         if line_height != 0 {
             self.term.queue(cursor::MoveUp(line_height))?;
@@ -530,7 +530,7 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
     }
 
     /// For internal use when we **know** that we want to keep the same completion state
-    pub(crate) fn change_line_raw(&mut self, line: String) -> io::Result<()> {
+    fn change_line_raw(&mut self, line: String) -> io::Result<()> {
         self.move_to_beginning(self.line_len())?;
         self.term.queue(Clear(FromCursorDown))?;
         self.line.len = line.chars().count() as u16;
@@ -652,9 +652,9 @@ impl<Ctx, W: Write> LineReader<Ctx, W> {
                 let hook_output = (hook.event_hook)(self, context, event)?;
                 match hook_output.new_state {
                     HookControl::Continue => self.input_hooks.push_front(hook),
-                    HookControl::Release => {
-                        self.try_run_reset_callback(context, hook.init_revert)?
-                    }
+                    HookControl::Release => self
+                        .try_revert_input_hook(context, hook)
+                        .unwrap_or(Ok(()))?,
                 }
                 return Ok(hook_output.event);
             }

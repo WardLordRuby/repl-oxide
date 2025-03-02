@@ -76,13 +76,6 @@ impl<'a, W: Write> LineReaderBuilder<'a, W> {
         self.custom_quit = Some(quit_cmd);
         self
     }
-
-    /// Supply history entries that the repl should start with. The end of the given `history` slice will
-    /// be the most recient.
-    pub fn with_history_entries<S: AsRef<str>>(mut self, history: &'a [S]) -> Self {
-        self.starting_history = Some(History::from_iter(history));
-        self
-    }
 }
 
 impl<W: Write> LineReaderBuilder<'_, W> {
@@ -122,6 +115,13 @@ impl<W: Write> LineReaderBuilder<'_, W> {
     /// Generally you always want the prompt separator to end with a space
     pub fn with_custom_prompt_separator(mut self, separator: &str) -> Self {
         self.prompt_end = Some(String::from(separator.trim()));
+        self
+    }
+
+    /// Supply history entries that the repl should start with. The end of the given `history` slice will
+    /// be the most recient.
+    pub fn with_history_entries<S: AsRef<str>>(mut self, entries: &[S]) -> Self {
+        self.starting_history = Some(History::from_iter(entries));
         self
     }
 
