@@ -14,6 +14,10 @@ runner = ["macros"]
 spawner = ["runner", "tokio/macros", "tokio/rt"]
 all = ["spawner"]
 
+[package.metadata.docs.rs]
+rustdoc-args = ["--cfg", "docsrs"]
+all-features = true
+
 [dependencies]
 constcat = "0.6.0"
 crossterm = { version = "0.28.1", features = ["event-stream"] }

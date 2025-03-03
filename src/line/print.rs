@@ -39,16 +39,18 @@ where
     Ok(())
 }
 
-/// Queues text and color encodes if styleization is enabled to be displayed on the repl's writer to normalize
-/// accross targets. Appends `"\r\n"` to the end of the given input.
+/// Queues a single color encoded line to be displayed on the given writer to normalize accross targets.
+///
+/// Only will color encode [`RED`] if the [`Repl`]'s line stylization is enabled. Appends `"\r\n"` to the
+/// end of the given input.
 ///
 /// Since repl-oxide requires full control over the terminal driver and enforces "Raw Mode" via [`build`],
 /// [`std::println!`] on UNIX systems does not display text as it normally would. This function will ensure
 /// text is printed as you would expect on all targets.
 ///
 /// This function is designed to only be used when the repl is busy and you do not have access to the repl
-/// handle prefer: [`Repl::println`]. If you need to display text while the repl is active see:
-/// [`Repl::print_background_msg`]
+/// handle prefer: [`Repl::eprintln`]. If you need to display text while the repl is active see:
+/// [`Repl::print_background_msg`] (Does not handle color encoding)
 ///
 /// If only compiling for Windows targets, the `println!` macro will display text as expected.
 ///
@@ -154,15 +156,17 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         println(&mut self.term, print)
     }
 
-    /// Queues text and color encodes if styleization is enabled to be displayed on the repl's writer to normalize
-    /// accross targets. Appends `"\r\n"` to the end of the given input.
+    /// Queues color encoded text to be displayed on the repl's writer to normalize accross targets. Only will
+    /// color encode [`RED`] if the [`Repl`]'s line stylization is enabled. Appends `"\r\n"` to the end of the
+    /// given input.
     ///
     /// Since repl-oxide requires full control over the terminal driver and enforces "Raw Mode" via [`build`],
     /// [`std::println!`] on UNIX systems does not display text as it normally would. This function will ensure
     /// text is printed as you would expect on all targets.
     ///
     /// This method is designed to only be used when the repl is busy. Eg. from within a commands definition. If
-    /// you need to display text while the repl is active see: [`print_background_msg`]
+    /// you need to display text while the repl is active see: [`print_background_msg`] (Does not handle color
+    /// encoding)
     ///
     /// If only compiling for Windows targets, the `println!` macro will display text as expected.
     ///

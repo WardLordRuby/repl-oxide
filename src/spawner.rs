@@ -17,8 +17,6 @@ where
     // MARK: TODO
     // create example for writing your own repl without macros
 
-    /// **Required Feature** = "spawner"
-    ///
     /// Spawns the repl, returning you a [`tokio::sync::mpsc::Sender`] as a handle to your terminal output
     /// stream. You must use this channel anytime you need to display background messages to the terminal.
     ///

@@ -1,6 +1,5 @@
 /// Convenience macro for the generalized process of handling a streamed [`Event`]
 ///
-/// **Required Feature** = "macros"  
 /// The macros feature flag is included in both "runner" and "spawner" feature flags.
 ///
 /// # Example
