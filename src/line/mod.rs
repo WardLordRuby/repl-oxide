@@ -356,10 +356,12 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
 
     /// Render is designed to be called at the top of your read eval print loop. This method should only be
     /// used when writing a custom repl and neither [`run`] / [`spawn`] are being used.  
-    /// Eg:
+    ///
+    /// # Example
+    ///
     /// ```ignore
-    /// line_handle.clear_unwanted_inputs(&mut reader).await?;
-    /// line_handle.render()?;
+    /// repl.clear_unwanted_inputs(&mut reader).await?;
+    /// repl.render()?;
     /// ```
     /// [`run`]: crate::line::Repl::run
     /// [`spawn`]: crate::line::Repl::spawn
@@ -591,38 +593,42 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// The main control flow for awaited events from a `crossterm::event::EventStream`. Works well as its
     /// own branch in a `tokio::select!`.
     ///
-    /// Example read eval print loop assuming we have a `Ctx`, `command_context`,  that implements
-    /// [`Executor`]
+    /// # Example
+    ///
+    /// Read eval print loop assuming we have a `Ctx`, `command_context`,  that implements [`Executor`]
     ///
     /// ```ignore
     /// let mut reader = crossterm::event::EventStream::new();
-    /// let mut line_handle = repl_builder(std::io::stdout())
+    /// let mut repl = repl_builder(std::io::stdout())
     ///     .build()
     ///     .expect("input writer accepts crossterm commands");
     ///
     /// loop {
-    ///     line_handle.clear_unwanted_inputs(&mut reader).await?;
-    ///     line_handle.render()?;
+    ///     repl.clear_unwanted_inputs(&mut reader).await?;
+    ///     repl.render()?;
     ///
     ///     if let Some(event_result) = reader.next().await {
-    ///         match line_handle.process_input_event(&mut command_context, event_result?)? {
+    ///         match repl.process_input_event(&mut command_context, event_result?)? {
     ///             EventLoop::Continue => (),
     ///             EventLoop::Break => break,
     ///             EventLoop::AsyncCallback(callback) => {
-    ///                 if let Err(err) = callback(&mut line_handle, &mut command_context).await {
-    ///                     line_handle.eprintln(err)?;
-    ///                     line_handle.conditionally_remove_hook(&err)?;
+    ///                 if let Err(err) = callback(&mut repl, &mut command_context).await {
+    ///                     // `eprintln` here is only ok if the `InputHook` that spawned this callback has called
+    ///                     // cleared the current line, otherwise we would have to use `print_background_msg` or
+    ///                     // use a separate logging crate, eg. tracing w/ rolling file appender (log to file)
+    ///                     repl.eprintln(err)?;
+    ///                     repl.conditionally_remove_hook(&err)?;
     ///                 }
     ///             },
     ///             EventLoop::TryProcessInput(Ok(user_tokens)) => {
     ///                 match command_context.try_execute_command(user_tokens).await? {
     ///                     CommandHandle::Processed => (),
-    ///                     CommandHandle::InsertHook(input_hook) => line_handle.register_input_hook(input_hook),
+    ///                     CommandHandle::InsertHook(input_hook) => repl.register_input_hook(input_hook),
     ///                     CommandHandle::Exit => break,
     ///                 }
     ///             }
     ///             EventLoop::TryProcessInput(Err(mismatched_quotes)) => {
-    ///                 line_handle.eprintln(mismatched_quotes)?;
+    ///                 repl.eprintln(mismatched_quotes)?;
     ///             },
     ///         }
     ///     }
@@ -713,7 +719,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 kind: KeyEventKind::Press,
                 ..
             }) => {
-                if !self.line.input.trim().is_empty() {
+                if !self.input().trim().is_empty() {
                     return Ok(EventLoop::TryProcessInput(
                         shellwords_split(self.enter_command()?)
                             .map_err(|_| ParseErr::MismatchedQuotes),

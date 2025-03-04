@@ -248,12 +248,16 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// - `Ok(true)` hook removed and destructor succeeded or input hook had no destructor set
     /// - `Ok(false)` no hook to remove or queued hook UID does not match the UID of the given `err`
     ///
-    /// Eg:
+    /// # Example
+    ///
     /// ```ignore
     /// EventLoop::AsyncCallback(callback) => {
-    ///     if let Err(err) = callback(&mut line_handle, &mut command_context).await {
-    ///         line_handle.eprintln(err)?;
-    ///         line_handle.conditionally_remove_hook(&err)?;
+    ///     if let Err(err) = callback(&mut repl, &mut command_context).await {
+    ///         // `eprintln` here is only ok if the `InputHook` that spawned this callback has called
+    ///         // cleared the current line, otherwise we would have to use `print_background_msg` or
+    ///         // use a separate logging crate, eg. tracing w/ rolling file appender (log to file)
+    ///         repl.eprintln(err)?;
+    ///         repl.conditionally_remove_hook(&err)?;
     ///     }
     /// },
     /// ```

@@ -143,7 +143,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         self.change_line(entry)
     }
 
-    /// Returns history exported via clone as a new `Vec` where the most recient commands are on the top of the stack.
+    /// Returns history exported via clone as a new `Vec` where the most recent commands are on the top of the stack.
     pub fn export_history(&self, max: Option<usize>) -> Vec<String> {
         let skip = self.history.prev_entries.len()
             - max
