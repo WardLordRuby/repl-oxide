@@ -2,9 +2,8 @@
 /*         cargo r --example callbacks --features="runner"          */
 
 use repl_oxide::{
-    callback::{HookLifecycle, InputEventHook},
     executor::{format_for_clap, CommandHandle, Executor},
-    repl_builder, HookedEvent, InputHook, Repl,
+    repl_builder, HookStates, HookedEvent, InputHook, Repl,
 };
 
 use std::io::{self, Stdout};
@@ -28,26 +27,30 @@ enum Command {
 struct CommandContext;
 
 fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {
-    // Change the line state as soon as we return our new `InputHook`
-    let init: Box<HookLifecycle<CommandContext, Stdout>> =
-        Box::new(|repl_handle, _command_context| {
+    let line_changes = HookStates::new(
+        // Change the line state as soon as we return our new `InputHook`
+        |repl_handle, _command_context| {
             repl_handle.disable_line_stylization();
             repl_handle.set_prompt_and_separator("Are you sure? (y/n)", ":");
             Ok(())
-        });
-
-    // Revert the line state if the user chooses not to quit
-    let revert: Box<HookLifecycle<CommandContext, Stdout>> =
-        Box::new(|repl_handle, _command_context| {
+        },
+        // Revert the line state if the user chooses not to quit
+        |repl_handle, _command_context| {
             repl_handle.enable_line_stylization();
             repl_handle.set_default_prompt_and_separator();
             Ok(())
-        });
+        },
+    );
 
-    // Define how our `InputEventHook` reacts to `KeyEvent`s of `KeyEventKind::Press`
-    // This could also easily be set up to only react apon enter, for simplicity we will just react apon press
-    let input_hook: Box<InputEventHook<CommandContext, Stdout>> =
-        Box::new(|repl_handle, _command_context, event| match event {
+    // Since our `event_hook` does not return any `EventLoop::AsyncCallback` event we can use `with_new_uid`
+    // here. If we wanted to modify the state of our `CommandContext` within our `input_hook` we could use
+    // either callback type to do so. If said callback could error we would have to ensure that the error
+    // has the same `UID` and the outer `InputHook`
+    let input_event_hook = InputHook::with_new_uid(
+        line_changes,
+        // Define how our `InputEventHook` reacts to `KeyEvent`s of `KeyEventKind::Press`. This could also
+        // easily be set up to only react apon enter, for simplicity we will just react apon press
+        |repl_handle, _command_context, event| match event {
             Event::Key(
                 KeyEvent {
                     code: KeyCode::Char('c'),
@@ -68,16 +71,10 @@ fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {
                 HookedEvent::break_repl()
             }
             _ => HookedEvent::release_hook(),
-        });
+        },
+    );
 
-    // Since our `input_hook` does not return any `EventLoop::Callback` or `EventLoop::AsyncCallback`
-    // we can use `with_new_uid` here. If we wanted to modify the state of our `CommandContext` within
-    // our `input_hook` we could use either callback type to do so. If said callback could error we would
-    // have to ensure that the error has the same `UID` and the outer `InputHook`
-    Ok(CommandHandle::InsertHook(InputHook::with_new_uid(
-        InputHook::new_hook_states(init, revert),
-        input_hook,
-    )))
+    Ok(CommandHandle::InsertHook(input_event_hook))
 }
 
 // Implement `Executor` so we can use `run`

@@ -6,9 +6,13 @@ use crate::{
 use std::{
     borrow::Cow,
     fmt::Display,
+    future::Future,
     io::{self, Write},
+    pin::Pin,
     sync::atomic::{AtomicUsize, Ordering},
 };
+
+use crossterm::event::Event;
 
 static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
 
@@ -18,10 +22,10 @@ static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
 /// behaves.
 ///
 /// Hooks can be initialized with a [`HookLifecycle`] that allows for a place to modify the current state
-/// of the [`Repl`] and/or the users generic `Ctx`. To do so use [`new_hook_states`], note you must also
+/// of the [`Repl`] and/or the users generic `Ctx`. To do so use [`HookStates::new`], note you must also
 /// supply a seperate callback to revert the changes back to your desired state when the `InputHook` is dropped.
 ///
-/// Otherwise use [`no_state_change`] to not specify new and previous states.
+/// Otherwise use [`HookStates::no_change`] to not specify new and previous states.
 ///
 /// Hooks require a [`InputEventHook`] this callback can be is entirely responsible for controlling _all_
 /// reactions to [`KeyEvent`]'s of kind: [`KeyEventKind::Press`]. This will act as a manual overide of the
@@ -33,8 +37,6 @@ static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
 /// [`KeyEvent`]: <https://docs.rs/crossterm/latest/crossterm/event/struct.KeyEvent.html>
 /// [`KeyEventKind::Press`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.KeyEventKind.html>
 /// [`conditionally_remove_hook`]: Repl::conditionally_remove_hook
-/// [`new_hook_states`]: InputHook::new_hook_states
-/// [`no_state_change`]: InputHook::no_state_change
 pub struct InputHook<Ctx, W: Write> {
     uid: HookUID,
     pub(super) init_revert: HookStates<Ctx, W>,
@@ -43,8 +45,7 @@ pub struct InputHook<Ctx, W: Write> {
 
 /// Holds the constructor and deconstructor of an [`InputHook`]
 ///
-/// Can hold 2 unique [`HookLifecycle`] callbacks. This type's constructor is a method on
-/// [`InputHook::new_hook_states`]
+/// Can hold 2 unique [`HookLifecycle`] callbacks.
 pub struct HookStates<Ctx, W: Write> {
     pub(super) init: Option<Box<HookLifecycle<Ctx, W>>>,
     pub(super) revert: Option<Box<HookLifecycle<Ctx, W>>>,
@@ -59,6 +60,43 @@ impl<Ctx, W: Write> Default for HookStates<Ctx, W> {
             init: None,
             revert: None,
         }
+    }
+}
+
+impl<Ctx, W: Write> HookStates<Ctx, W> {
+    /// For use when creating an `InputHook` that doesn't need to change any state on construction or
+    /// deconstruction. Equivalent to [`HookStates::default`]
+    #[inline]
+    pub fn no_change() -> Self {
+        HookStates::default()
+    }
+
+    /// For use when creating an `InputHook` that changes the state of the [`Repl`] or the user
+    /// supplied generic `Ctx` on construction and deconstruction.
+    pub fn new(
+        init: impl FnOnce(&mut Repl<Ctx, W>, &mut Ctx) -> io::Result<()> + Send + 'static,
+        revert: impl FnOnce(&mut Repl<Ctx, W>, &mut Ctx) -> io::Result<()> + Send + 'static,
+    ) -> Self {
+        HookStates {
+            init: Some(Box::new(init)),
+            revert: Some(Box::new(revert)),
+        }
+    }
+}
+
+impl<Ctx, W: Write> EventLoop<Ctx, W> {
+    /// Create a new async callback for the run eval process loop to execute. Ensure the surrounding [`InputHook`]
+    /// has the same `uid` as the assigned [`CallbackErr`].
+    pub fn new_async_callback(
+        f: impl for<'a> FnOnce(
+                &mut Repl<Ctx, W>,
+                &'a mut Ctx,
+            )
+                -> Pin<Box<dyn Future<Output = Result<(), CallbackErr>> + Send + 'a>>
+            + Send
+            + 'static,
+    ) -> Self {
+        EventLoop::AsyncCallback(Box::new(f))
     }
 }
 
@@ -80,13 +118,15 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
     pub fn new(
         uid: HookUID,
         init_revert: HookStates<Ctx, W>,
-        event_hook: Box<InputEventHook<Ctx, W>>,
+        event_hook: impl Fn(&mut Repl<Ctx, W>, &mut Ctx, Event) -> io::Result<HookedEvent<Ctx, W>>
+            + Send
+            + 'static,
     ) -> Self {
         assert!(uid.0 < HOOK_UID.load(Ordering::SeqCst));
         Self {
             uid,
             init_revert,
-            event_hook,
+            event_hook: Box::new(event_hook),
         }
     }
 
@@ -97,31 +137,14 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
     /// [`new`]: Self::new
     pub fn with_new_uid(
         init_revert: HookStates<Ctx, W>,
-        event_hook: Box<InputEventHook<Ctx, W>>,
+        event_hook: impl Fn(&mut Repl<Ctx, W>, &mut Ctx, Event) -> io::Result<HookedEvent<Ctx, W>>
+            + Send
+            + 'static,
     ) -> Self {
         Self {
             uid: HookUID::new(),
             init_revert,
-            event_hook,
-        }
-    }
-
-    /// For use when creating an `InputHook` that doesn't need to change any state on construction or
-    /// deconstruction. Equivalent to [`HookStates::default`]
-    #[inline]
-    pub fn no_state_change() -> HookStates<Ctx, W> {
-        HookStates::default()
-    }
-
-    /// For use when creating an `InputHook` that changes the state of the [`Repl`] or the user
-    /// supplied generic `Ctx` on construction and deconstruction.
-    pub fn new_hook_states(
-        init: Box<HookLifecycle<Ctx, W>>,
-        revert: Box<HookLifecycle<Ctx, W>>,
-    ) -> HookStates<Ctx, W> {
-        HookStates {
-            init: Some(init),
-            revert: Some(revert),
+            event_hook: Box::new(event_hook),
         }
     }
 }
