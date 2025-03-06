@@ -9,15 +9,15 @@
 ///
 /// loop {
 ///     repl.clear_unwanted_inputs(&mut reader).await?;
-///     repl.render(ctx)?;
+///     repl.render(&mut command_context)?;
 ///
 ///     if let Some(event_result) = reader.next().await {
-///         general_event_process!(&mut repl, &mut ctx, event_result)
+///         general_event_process!(&mut repl, &mut command_context, event_result)
 ///     }
 /// }
 /// ```
 ///
-/// This macro requries you to implement [`Executor`] on your `ctx`.
+/// This macro requries you to implement [`Executor`] on your `Ctx`.
 ///
 /// Internally uses tracing's [`error!`] to log any errors that a user created [`AsyncCallback`] produces.
 /// As well as emitting a [`trace!`] event if the [`InputHook`] is successfully removed after the error.

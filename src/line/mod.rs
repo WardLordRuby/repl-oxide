@@ -169,7 +169,7 @@ impl Display for ParseErr {
 pub enum EventLoop<Ctx, W: Write> {
     Continue,
     Break,
-    AsyncCallback(Box<AsyncCallback<Ctx, W>>),
+    AsyncCallback(Box<dyn AsyncCallback<Ctx, W>>),
     TryProcessInput(Result<Vec<String>, ParseErr>),
 }
 
@@ -361,7 +361,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     ///
     /// ```ignore
     /// repl.clear_unwanted_inputs(&mut reader).await?;
-    /// repl.render()?;
+    /// repl.render(&mut command_context)?;
     /// ```
     /// [`run`]: crate::line::Repl::run
     /// [`spawn`]: crate::line::Repl::spawn
@@ -590,8 +590,8 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         Ok(EventLoop::TryProcessInput(Ok(quit_cmd)))
     }
 
-    /// The main control flow for awaited events from a `crossterm::event::EventStream`. Works well as its
-    /// own branch in a `tokio::select!`.
+    /// The main control flow for awaited events from a [`crossterm::event::EventStream`]. Works well as its
+    /// own branch in a [`tokio::select!`].
     ///
     /// # Example
     ///
@@ -605,7 +605,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     ///
     /// loop {
     ///     repl.clear_unwanted_inputs(&mut reader).await?;
-    ///     repl.render()?;
+    ///     repl.render(&mut command_context)?;
     ///
     ///     if let Some(event_result) = reader.next().await {
     ///         match repl.process_input_event(&mut command_context, event_result?)? {
@@ -635,6 +635,8 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// }
     /// ```
     ///
+    /// [`crossterm::event::EventStream`]: <https://docs.rs/crossterm/latest/crossterm/event/struct.EventStream.html>
+    /// [`tokio::select!`]: <https://docs.rs/tokio/latest/tokio/macro.select.html>
     /// [`Executor`]: crate::executor::Executor
     pub fn process_input_event(
         &mut self,
