@@ -225,6 +225,14 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         res
     }
 
+    /// Get an exclusive reference to the supplied writer for the rare cases you want to manually write into
+    /// it. Prefer: [`Repl::println`], [`Repl::eprintln`], or [`Repl::print_lines`] as they handle all the
+    /// nuances for you.
+    #[inline]
+    pub fn writer(&mut self) -> &mut W {
+        self.term.by_ref()
+    }
+
     /// Returns if completion is currently enabled
     #[inline]
     pub fn completion_enabled(&self) -> bool {
@@ -371,13 +379,10 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         }
 
         if std::mem::take(&mut self.command_entered) {
-            // We can not use the `position` command on UNIX
-            // It will have to be clear to unix/cross-platform users that they will be requred
-            // to always use the staging solution for printing any messages to the console
-            #[cfg(windows)]
-            {
-                self.cursor_at_start = cursor::position()?.0 == 0;
-            }
+            // Always assume the worst case that the user wrote into the writer without entering a new line
+            // reseting the current line should make it evident the user has a bug in there code, while the
+            // library ensures to always be displaying an acceptable state
+            self.cursor_at_start = false;
         }
 
         if let Some(res) = self.try_init_input_hook(context) {
@@ -488,6 +493,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         self.term
             .queue(Clear(FromCursorDown))?
             .queue(Print(NEW_LINE))?;
+        self.cursor_at_start = true;
         Ok(self.reset_line_state())
     }
 
@@ -502,6 +508,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             }))?
             .queue(Clear(FromCursorDown))?
             .queue(Print(NEW_LINE))?;
+        self.cursor_at_start = true;
         Ok(self.reset_line_state())
     }
 
@@ -613,15 +620,12 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     ///             EventLoop::Break => break,
     ///             EventLoop::AsyncCallback(callback) => {
     ///                 if let Err(err) = callback(&mut repl, &mut command_context).await {
-    ///                     // `eprintln` here is only ok if the `InputHook` that spawned this callback has called
-    ///                     // cleared the current line, otherwise we would have to use `print_background_msg` or
-    ///                     // use a separate logging crate, eg. tracing w/ rolling file appender (log to file)
     ///                     repl.eprintln(err)?;
     ///                     repl.conditionally_remove_hook(&err)?;
     ///                 }
     ///             },
     ///             EventLoop::TryProcessInput(Ok(user_tokens)) => {
-    ///                 match command_context.try_execute_command(user_tokens).await? {
+    ///                 match command_context.try_execute_command(&mut repl, user_tokens).await? {
     ///                     CommandHandle::Processed => (),
     ///                     CommandHandle::InsertHook(input_hook) => repl.register_input_hook(input_hook),
     ///                     CommandHandle::Exit => break,

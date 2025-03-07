@@ -61,7 +61,7 @@ pub enum CommandHandle<Ctx, W: Write> {
 /// Then within your read eval print loop requires some boilerplate to match against the returned [`CommandHandle`]
 /// ```ignore
 /// EventLoop::TryProcessInput(Ok(user_tokens)) => {
-///     match command_context.try_execute_command(user_tokens).await {
+///     match command_context.try_execute_command(&mut repl, user_tokens).await {
 ///         CommandHandle::Processed => (),
 ///         CommandHandle::InsertHook(input_hook) => repl.register_input_hook(input_hook),
 ///         CommandHandle::Exit => break,

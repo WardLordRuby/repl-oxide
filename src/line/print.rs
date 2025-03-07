@@ -24,10 +24,10 @@ use crossterm::{
 /// text is printed as you would expect on all targets.
 ///
 /// This function is designed to only be used when the repl is busy and you do not have access to the repl
-/// handle prefer: [`Repl::println`]. If you need to display text while the repl is active see:
-/// [`Repl::print_background_msg`]
+/// handle prefer: [`Repl::println`].
 ///
-/// If only compiling for Windows targets, the `println!` macro will display text as expected.
+/// If only compiling for Windows targets, the `println!` macro will display text as expected as long as it
+/// is _only_ used when the repl is busy.
 ///
 /// [`build`]: crate::line::builder::ReplBuilder::build
 pub fn println<W, D>(writer: &mut W, print: D) -> io::Result<()>
@@ -49,10 +49,10 @@ where
 /// text is printed as you would expect on all targets.
 ///
 /// This function is designed to only be used when the repl is busy and you do not have access to the repl
-/// handle prefer: [`Repl::eprintln`]. If you need to display text while the repl is active see:
-/// [`Repl::print_background_msg`] (Does not handle color encoding)
+/// handle prefer: [`Repl::eprintln`].
 ///
-/// If only compiling for Windows targets, the `println!` macro will display text as expected.
+/// If only compiling for Windows targets, the `eprintln!` macro will display text as expected as long as it
+/// is _only_ used when the repl is busy.
 ///
 /// [`build`]: crate::line::builder::ReplBuilder::build
 pub fn eprintln<W, D>(writer: &mut W, print: D, stylize: bool) -> io::Result<()>
@@ -78,8 +78,7 @@ where
 /// text is printed as you would expect on all targets.
 ///
 /// This function is designed to only be used when the repl is busy and you do not have access to the repl
-/// handle prefer: [`Repl::println`]. If you need to display text while the repl is active see:
-/// [`Repl::print_background_msg`]
+/// handle prefer: [`Repl::print_lines`].
 ///
 /// If only compiling for Windows targets, the `println!` macro will display text as expected.
 ///
@@ -106,36 +105,6 @@ where
 }
 
 impl<Ctx, W: Write> Repl<Ctx, W> {
-    /// Makes sure background messages are displayed properly. Internally this method expects a call to render
-    /// to happen directly following this call. Meaning it is only useful to be called from it's own branch in a
-    /// [`select!`] macro. Internally this is what [`spawn`] does for you. If you are looking to convert multiple
-    /// line endings at once use: [`Repl::print_multiline_background_msg`].
-    ///
-    /// If writing your own run eval print loop see [basic_custom.rs] for an example.
-    ///
-    /// [basic_custom.rs]: <https://github.com/WardLordRuby/repl-oxide/blob/main/examples/basic_custom.rs>
-    /// [`select!`]: <https://docs.rs/tokio/latest/tokio/macro.select.html>
-    /// [`spawn`]: Repl::spawn
-    pub fn print_background_msg<T: Display>(&mut self, msg: T) -> io::Result<()> {
-        self.background_msg_prep()?;
-        self.println(msg)
-    }
-
-    /// Makes sure background messages are displayed properly. Internally this method expects a call to render
-    /// to happen directly following this call. Meaning it is only useful to be called from it's own branch in a
-    /// [`select!`] macro. Internally this is what [`spawn`] does for you. If you do not need to convert multiple
-    /// line endings at once use: [`Repl::print_background_msg`].
-    ///
-    /// If writing your own run eval print loop see [basic_custom.rs] for an example.
-    ///
-    /// [basic_custom.rs]: <https://github.com/WardLordRuby/repl-oxide/blob/main/examples/basic_custom.rs>
-    /// [`select!`]: <https://docs.rs/tokio/latest/tokio/macro.select.html>
-    /// [`spawn`]: Repl::spawn
-    pub fn print_multiline_background_msg<S: AsRef<str>>(&mut self, print: S) -> io::Result<()> {
-        self.background_msg_prep()?;
-        self.print_lines(print)
-    }
-
     /// Queues text to be displayed on the repl's writer to normalize accross targets. Appends `"\r\n"` to the end
     /// of the given input. If you are looking to convert multiple line endings at once use:
     /// [`Repl::print_lines`].
@@ -144,15 +113,14 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// [`std::println!`] on UNIX systems does not display text as it normally would. This function will ensure
     /// text is printed as you would expect on all targets.
     ///
-    /// This method is designed to only be used when the repl is busy. Eg. from within a commands definition. If
-    /// you need to display text while the repl is active see: [`print_background_msg`]
+    /// If only compiling for Windows targets, the `println!` macro will display text as expected as long as it
+    /// is _only_ used when the repl is busy.
     ///
-    /// If only compiling for Windows targets, the `println!` macro will display text as expected.
-    ///
-    /// [`print_background_msg`]: Self::print_background_msg
     /// [`build`]: crate::line::builder::ReplBuilder::build
-    #[inline]
     pub fn println<D: Display>(&mut self, print: D) -> io::Result<()> {
+        if !self.cursor_at_start {
+            self.prep_for_background_msg()?;
+        }
         println(&mut self.term, print)
     }
 
@@ -164,16 +132,14 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// [`std::println!`] on UNIX systems does not display text as it normally would. This function will ensure
     /// text is printed as you would expect on all targets.
     ///
-    /// This method is designed to only be used when the repl is busy. Eg. from within a commands definition. If
-    /// you need to display text while the repl is active see: [`print_background_msg`] (Does not handle color
-    /// encoding)
+    /// If only compiling for Windows targets, the `eprintln!` macro will display text as expected as long as it
+    /// is _only_ used when the repl is busy.
     ///
-    /// If only compiling for Windows targets, the `println!` macro will display text as expected.
-    ///
-    /// [`print_background_msg`]: Self::print_background_msg
     /// [`build`]: crate::line::builder::ReplBuilder::build
-    #[inline]
     pub fn eprintln<D: Display>(&mut self, print: D) -> io::Result<()> {
+        if !self.cursor_at_start {
+            self.prep_for_background_msg()?;
+        }
         eprintln(&mut self.term, print, self.line.style_enabled)
     }
 
@@ -185,20 +151,23 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// [`std::println!`] on UNIX systems does not display text as it normally would. This function will ensure
     /// text is printed as you would expect on all targets.
     ///
-    /// This method is designed to only be used when the repl is busy. Eg. from within a commands definition. If
-    /// you need to display text while the repl is active see: [`print_background_msg`]
+    /// If only compiling for Windows targets, the `println!` macro will display text as expected as long as it
+    /// is _only_ used when the repl is busy.
     ///
-    /// If only compiling for Windows targets, the `println!` macro will display text as expected.
-    ///
-    /// [`print_background_msg`]: Self::print_background_msg
     /// [`build`]: crate::line::builder::ReplBuilder::build
-    #[inline]
     pub fn print_lines<S: AsRef<str>>(&mut self, str: S) -> io::Result<()> {
+        if !self.cursor_at_start {
+            self.prep_for_background_msg()?;
+        }
         print_lines(&mut self.term, str)
     }
 
+    /// In almost all cases this is not the method you are looking for, [`Repl::println`], [`Repl::eprintln`], and
+    /// [`Repl::print_lines`] all take care of this for you. In the rare case you want to write into the repl manually
+    /// you can use this method, however you will run into undefined behavior if what is written into the `Repl` does
+    /// not end in a new line by the time [`Repl::render`] is called again.
     #[inline(always)]
-    fn background_msg_prep(&mut self) -> io::Result<()> {
+    pub fn prep_for_background_msg(&mut self) -> io::Result<()> {
         execute!(self.term, BeginSynchronizedUpdate)?;
         self.term.queue(cursor::Hide)?;
         self.move_to_beginning(self.line_len())?;

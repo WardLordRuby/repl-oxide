@@ -118,7 +118,7 @@ async fn main() -> io::Result<()> {
             // Writing your own loop allows for awaiting custom events
             Some(_) = update_rx.recv() => {
                 if let Err(err) = save_cache() {
-                    repl.print_background_msg(err)?;
+                    repl.println(err)?;
                 }
             }
         }

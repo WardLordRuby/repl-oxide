@@ -263,9 +263,6 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// ```ignore
     /// EventLoop::AsyncCallback(callback) => {
     ///     if let Err(err) = callback(&mut repl, &mut command_context).await {
-    ///         // `eprintln` here is only ok if the `InputHook` that spawned this callback has called
-    ///         // cleared the current line, otherwise we would have to use `print_background_msg` or
-    ///         // use a separate logging crate, eg. tracing w/ rolling file appender (log to file)
     ///         repl.eprintln(err)?;
     ///         repl.conditionally_remove_hook(&err)?;
     ///     }

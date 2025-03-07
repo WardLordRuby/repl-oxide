@@ -54,7 +54,7 @@ where
                     }
 
                     Some(msg) = msg_rx.recv() => {
-                        self.print_background_msg(msg)?
+                        self.println(msg)?
                     }
                 }
             }
