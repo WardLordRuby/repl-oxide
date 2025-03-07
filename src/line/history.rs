@@ -1,8 +1,8 @@
 use crate::line::{completion::Direction, Repl};
 
 use std::{
-    collections::{BTreeMap, HashMap},
-    hash::{DefaultHasher, Hash, Hasher},
+    collections::{hash_map::DefaultHasher, BTreeMap, HashMap},
+    hash::{Hash, Hasher},
     io::{self, Write},
 };
 

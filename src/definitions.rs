@@ -71,7 +71,7 @@ pub mod callback {
     /// [`InputHook`]: crate::line::InputHook
     pub trait AsyncCallback<Ctx, W: Write>:
         for<'a> FnOnce(
-            &mut Repl<Ctx, W>,
+            &'a mut Repl<Ctx, W>,
             &'a mut Ctx,
         )
             -> Pin<Box<dyn Future<Output = Result<(), CallbackErr>> + Send + 'a>>
@@ -81,7 +81,7 @@ pub mod callback {
 
     impl<Ctx, W: Write, T> AsyncCallback<Ctx, W> for T where
         T: for<'a> FnOnce(
-                &mut Repl<Ctx, W>,
+                &'a mut Repl<Ctx, W>,
                 &'a mut Ctx,
             )
                 -> Pin<Box<dyn Future<Output = Result<(), CallbackErr>> + Send + 'a>>
