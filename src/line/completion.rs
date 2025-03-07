@@ -1289,16 +1289,23 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             } else {
                 self.completion.recommendations.clear();
             }
+
+            let add_help = self.completion.add_help();
+
             if self.completion.indexer.multiple {
                 if let Some(recs2) = rec_data_2.recs {
                     let rec_len = self.completion.recommendations.len() as i8;
                     let recs2 = &recs2[..rec_data_2.unique_rec_end()];
-                    self.completion.indexer.in_list_2 =
-                        (rec_len..rec_len + recs2.len() as i8).collect();
+                    let rec_2_end = if add_help {
+                        rec_len + recs2.len() as i8 + 1
+                    } else {
+                        rec_len + recs2.len() as i8
+                    };
+                    self.completion.indexer.in_list_2 = (rec_len..rec_2_end).collect();
                     self.completion.recommendations.extend(recs2);
                 }
             }
-            if self.completion.add_help() {
+            if add_help {
                 self.completion.recommendations.push(HELP_STR);
             }
             return;
@@ -1338,7 +1345,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 self.completion.indexer.in_list_2 = recommendations
                     .iter()
                     .enumerate()
-                    .filter(|&(_, rec)| recs2.contains(rec))
+                    .filter(|&(_, rec)| recs2.contains(rec) || *rec == HELP_STR)
                     .map(|(i, _)| i as i8)
                     .collect();
             }
