@@ -3,7 +3,8 @@
 
 use repl_oxide::{
     executor::{format_for_clap, CommandHandle, Executor},
-    repl_builder, HookStates, HookedEvent, InputHook, Repl,
+    input_hook::{HookStates, HookedEvent, InputHook},
+    repl_builder, Repl,
 };
 
 use std::io::{self, Stdout};

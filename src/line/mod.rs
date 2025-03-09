@@ -1,22 +1,23 @@
 mod builder;
 mod history;
-mod input_hook;
 mod print;
 mod style;
 
 /// Collection of types used for auto completion of user input
 pub mod completion;
 
+/// Collection of types used for custom control over the EventStream
+pub mod input_hook;
+
 pub use builder::*;
-pub use input_hook::*;
 pub use print::*;
 
 use crate::{
     ansi_code::{DIM_WHITE, RED, RESET},
-    callback::AsyncCallback,
     line::{
         completion::{Completion, Direction},
         history::History,
+        input_hook::{AsyncCallback, HookControl, InputHook},
     },
 };
 

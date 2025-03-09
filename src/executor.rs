@@ -1,4 +1,4 @@
-use crate::line::{InputHook, Repl};
+use crate::line::{input_hook::InputHook, Repl};
 
 use std::{
     future::Future,

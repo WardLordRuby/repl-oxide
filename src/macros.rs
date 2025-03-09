@@ -26,9 +26,9 @@
 /// run eval process loop. Requiring the outer scope of to have the same signature, and be called from
 /// within a loop.
 ///
-/// [`AsyncCallback`]: crate::callback::AsyncCallback
+/// [`AsyncCallback`]: crate::line::input_hook::AsyncCallback
 /// [`Executor`]: crate::executor::Executor
-/// [`InputHook`]: crate::line::InputHook
+/// [`InputHook`]: crate::line::input_hook::InputHook
 /// [`Event`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html>
 /// [`error!`]: <https://docs.rs/tracing/latest/tracing/macro.error.html>
 /// [`trace!`]: <https://docs.rs/tracing/latest/tracing/macro.trace.html>

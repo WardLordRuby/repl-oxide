@@ -1,16 +1,83 @@
-use crate::{
-    callback::{AsyncCallback, HookLifecycle, InputEventHook},
-    line::{EventLoop, Repl},
-};
+use crate::line::{EventLoop, Repl};
 
 use std::{
     borrow::Cow,
     fmt::Display,
+    future::Future,
     io::{self, Write},
+    pin::Pin,
     sync::atomic::{AtomicUsize, Ordering},
 };
 
+use crossterm::event::Event;
+
 static HOOK_UID: AtomicUsize = AtomicUsize::new(0);
+
+/// Callback used by [`InputHook`] for determining how [`Event`]'s are processed
+///
+/// This callback can be constructed via either `InputHook` constructor ([`new`] /
+/// [`with_new_uid`]).
+///
+/// [`InputHook`]: crate::line::InputHook
+/// [`new`]: crate::line::InputHook::new
+/// [`with_new_uid`]: crate::line::InputHook::with_new_uid
+/// [`Event`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.Event.html>
+pub trait InputEventHook<Ctx, W: Write>:
+    Fn(&mut Repl<Ctx, W>, &mut Ctx, Event) -> io::Result<HookedEvent<Ctx, W>> + Send
+{
+}
+
+impl<Ctx, W: Write, T> InputEventHook<Ctx, W> for T where
+    T: Fn(&mut Repl<Ctx, W>, &mut Ctx, Event) -> io::Result<HookedEvent<Ctx, W>> + Send
+{
+}
+
+/// Constructor and deconstructor for an [`InputHook`]
+///
+/// A pair of this callback type can be constructed via [`HookStates::new`], then passed to
+/// either `InputHook` constructor ([`new`] / [`with_new_uid`]) for assignment.
+///
+/// [`HookStates::new`]: crate::line::input_hook::HookStates::new
+/// [`InputHook`]: crate::line::input_hook::InputHook
+/// [`new`]: crate::line::input_hook::InputHook::new
+/// [`with_new_uid`]: crate::line::input_hook::InputHook::with_new_uid
+pub trait HookLifecycle<Ctx, W: Write>:
+    FnOnce(&mut Repl<Ctx, W>, &mut Ctx) -> io::Result<()> + Send
+{
+}
+
+impl<Ctx, W: Write, T> HookLifecycle<Ctx, W> for T where
+    T: FnOnce(&mut Repl<Ctx, W>, &mut Ctx) -> io::Result<()> + Send
+{
+}
+
+/// Callback to be used when you need to await operations on your generic `Ctx`
+///
+/// Can be returned as the [`HookedEvent`] from within an [`InputHook`] and then awaited on
+/// by the run eval process loop. This callback can be constructed via
+/// [`EventLoop::new_async_callback`].
+///
+/// [`EventLoop::new_async_callback`]: crate::line::EventLoop::new_async_callback
+/// [`HookedEvent`]: crate::line::input_hook::HookedEvent
+/// [`InputHook`]: crate::line::InputHook
+pub trait AsyncCallback<Ctx, W: Write>:
+    for<'a> FnOnce(
+        &'a mut Repl<Ctx, W>,
+        &'a mut Ctx,
+    ) -> Pin<Box<dyn Future<Output = Result<(), CallbackErr>> + Send + 'a>>
+    + Send
+{
+}
+
+impl<Ctx, W: Write, T> AsyncCallback<Ctx, W> for T where
+    T: for<'a> FnOnce(
+            &'a mut Repl<Ctx, W>,
+            &'a mut Ctx,
+        )
+            -> Pin<Box<dyn Future<Output = Result<(), CallbackErr>> + Send + 'a>>
+        + Send
+{
+}
 
 /// Powerful type that allows customization of library default implementations
 ///
@@ -101,7 +168,7 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
     /// will call [`conditionally_remove_hook`] when any callback errors. When writing your own repl it is
     /// recomended to implement this logic.  
     ///
-    /// [`AsyncCallback`]: crate::callback::AsyncCallback
+    /// [`AsyncCallback`]: crate::line::input_hook::AsyncCallback
     /// [`with_new_uid`]: Self::with_new_uid
     /// [`conditionally_remove_hook`]: Repl::conditionally_remove_hook
     /// [`general_event_process`]: crate::general_event_process
@@ -122,7 +189,7 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
     /// For use when creating an `InputHook` that does not contain an [`AsyncCallback`] that can error, else use
     /// [`new`].
     ///
-    /// [`AsyncCallback`]: crate::callback::AsyncCallback
+    /// [`AsyncCallback`]: crate::line::input_hook::AsyncCallback
     /// [`new`]: Self::new
     pub fn with_new_uid<F>(init_revert: HookStates<Ctx, W>, event_hook: F) -> Self
     where
@@ -141,7 +208,7 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
 /// `HookUID` links an [`InputEventHook`] to all it's spawned [`AsyncCallback`]. This provides a system for
 /// dynamic [`InputHook`] termination. For more information see: [`conditionally_remove_hook`]
 ///
-/// [`AsyncCallback`]: crate::callback::AsyncCallback
+/// [`AsyncCallback`]: crate::line::input_hook::AsyncCallback
 /// [`conditionally_remove_hook`]: Repl::conditionally_remove_hook
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct HookUID(usize);
