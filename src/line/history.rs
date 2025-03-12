@@ -1,4 +1,4 @@
-use crate::line::{completion::Direction, Repl};
+use crate::line::Repl;
 
 use std::{
     collections::{hash_map::DefaultHasher, BTreeMap, HashMap},
@@ -16,15 +16,16 @@ pub(super) struct History {
 }
 
 impl History {
-    /// Caller must gaurentee there are available entries in the given direction
-    fn get_unchecked(&mut self, direction: Direction) -> &str {
-        let (&pos, entry) = match direction {
-            Direction::Previous => self.prev_entries.range(..self.curr_pos).next_back(),
-            Direction::Next => self.prev_entries.range(self.curr_pos + 1..).next(),
-        }
-        .expect("no entries in the given direction");
-        self.curr_pos = pos;
-        entry
+    /// Tries to get the next position and entry in the history after `curr_pos`
+    #[inline]
+    fn next(&self) -> Option<(&usize, &String)> {
+        self.prev_entries.range(self.curr_pos + 1..).next()
+    }
+
+    /// Tries to get the next_back position and entry in the history before `curr_pos`
+    #[inline]
+    fn next_back(&self) -> Option<(&usize, &String)> {
+        self.prev_entries.range(..self.curr_pos).next_back()
     }
 
     /// Items yield from most recent to oldest
@@ -35,8 +36,20 @@ impl History {
 
     /// Returns the most recent entry
     #[inline]
-    pub(super) fn last(&self) -> Option<&str> {
+    pub(super) fn last_entry(&self) -> Option<&str> {
         self.prev_entries.values().next_back().map(String::as_str)
+    }
+
+    /// Returns the position of the first entry
+    #[inline]
+    fn first_positon(&self) -> Option<usize> {
+        self.prev_entries.keys().next().copied()
+    }
+
+    /// Returns the position of the most recent entry
+    #[inline]
+    fn last_positon(&self) -> Option<usize> {
+        self.prev_entries.keys().next_back().copied()
     }
 
     /// Returns the entry at a given position  
@@ -50,10 +63,10 @@ impl History {
         self.curr_pos = self.top;
     }
 
-    pub(super) fn push(&mut self, mut add: &str) {
+    fn push(&mut self, mut add: &str) {
         add = add.trim();
 
-        if self.last().is_some_and(|entry| entry == add) {
+        if self.last_entry().is_some_and(|entry| entry == add) {
             self.reset_idx();
             return;
         }
@@ -109,16 +122,26 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// Changes the current line to the previous history entry if available
     pub fn history_back(&mut self) -> io::Result<()> {
         if self.history.prev_entries.is_empty()
-            || self.history.curr_pos == *self.history.prev_entries.keys().next().unwrap()
+            || self.history.curr_pos == self.history.first_positon().expect("history is not empty")
         {
             self.set_uneventful();
             return Ok(());
         }
+
+        let (pos, entry) = self
+            .history
+            .next_back()
+            .map(|(&pos, entry)| (pos, entry.to_string()))
+            .expect("missed early return so `curr_pos` must be greater than the `first_positon`");
+
+        let prev = self.change_line(entry)?;
+
         if self.history.curr_pos == self.history.top {
-            self.history.temp_top = std::mem::take(&mut self.line.input);
+            self.history.temp_top = prev
         }
-        let entry = self.history.get_unchecked(Direction::Previous).to_string();
-        self.change_line(entry)
+
+        self.history.curr_pos = pos;
+        Ok(())
     }
 
     /// Changes the current line to the next history entry if available
@@ -127,20 +150,23 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             self.set_uneventful();
             return Ok(());
         }
-        let entry = if self.history.curr_pos
-            == *self
+
+        let (pos, entry) = if self.history.curr_pos
+            == self
                 .history
-                .prev_entries
-                .keys()
-                .next_back()
+                .last_positon()
                 .expect("missed early return so `history_back` must have been called before")
         {
-            self.history.curr_pos = self.history.top;
-            std::mem::take(&mut self.history.temp_top)
+            (self.history.top, std::mem::take(&mut self.history.temp_top))
         } else {
-            self.history.get_unchecked(Direction::Next).to_string()
+            self.history.next()
+                .map(|(&pos, entry)| (pos, entry.to_string()))
+                .expect("`curr_pos` is neither top nor `last_position`, so there must be at least one more entry")
         };
-        self.change_line(entry)
+
+        self.change_line(entry)?;
+        self.history.curr_pos = pos;
+        Ok(())
     }
 
     /// Returns history exported via clone as a new `Vec` where the most recent commands are on the top of the stack.
@@ -158,6 +184,6 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             .values()
             .skip(skip)
             .cloned()
-            .collect::<Vec<_>>()
+            .collect()
     }
 }

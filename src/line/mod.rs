@@ -531,21 +531,23 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         std::mem::take(&mut self.line.input)
     }
 
-    /// Changes the currently displayed user input to the given `line`
-    pub fn change_line(&mut self, line: String) -> io::Result<()> {
-        self.change_line_raw(line)?;
+    /// Changes the currently displayed user input to the given `line`, returning you an owned `String`
+    /// of what was replaced.
+    pub fn change_line(&mut self, line: String) -> io::Result<String> {
+        let prev = self.change_line_raw(line)?;
         self.reset_completion();
         self.update_completeion();
-        Ok(())
+        Ok(prev)
     }
 
-    /// For internal use when we **know** that we want to keep the same completion state
-    fn change_line_raw(&mut self, line: String) -> io::Result<()> {
+    /// For internal use when we **know** that we want to keep the same completion state, returning you
+    /// an owned `String` of what was replaced.
+    fn change_line_raw(&mut self, mut line: String) -> io::Result<String> {
         self.move_to_beginning(self.line_len())?;
         self.term.queue(Clear(FromCursorDown))?;
         self.line.len = line.chars().count() as u16;
-        self.line.input = line;
-        Ok(())
+        std::mem::swap(&mut self.line.input, &mut line);
+        Ok(line)
     }
 
     fn enter_command(&mut self) -> io::Result<&str> {
@@ -554,10 +556,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         self.add_to_history(&cmd);
         self.command_entered = true;
 
-        Ok(self
-            .history
-            .last()
-            .expect("just pushed into `prev_entries`"))
+        Ok(self.history.last_entry().expect("just pushed into history"))
     }
 
     fn append_ghost_text(&mut self) -> io::Result<()> {
@@ -567,12 +566,14 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         };
 
         match meta {
-            GhostTextMeta::History { p } => self.change_line(
-                self.history
-                    .get(&p)
-                    .expect("set meta `p` is valid position")
-                    .clone(),
-            )?,
+            GhostTextMeta::History { p } => {
+                self.change_line(
+                    self.history
+                        .get(&p)
+                        .expect("set meta `p` is valid position")
+                        .clone(),
+                )?;
+            }
             GhostTextMeta::Recomendation { len } => {
                 let rec_len = self.completion.recommendations[0].len();
                 let ghost_text = &self.completion.recommendations[0][rec_len - len..];

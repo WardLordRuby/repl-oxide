@@ -1457,7 +1457,8 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             ),
         );
 
-        self.change_line_raw(new_line)
+        self.change_line_raw(new_line)?;
+        Ok(())
     }
 
     /// Clears all state found by the completion module
