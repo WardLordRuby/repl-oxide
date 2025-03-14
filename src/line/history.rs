@@ -119,6 +119,13 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         self.history.push(add);
     }
 
+    /// Iterates over entries in the history from most recient to oldest. If you want an owned copy and to maintain
+    /// the correct order of the history stack see: [`Self::export_history`].
+    #[inline]
+    pub fn history_entries(&self) -> impl Iterator<Item = &str> {
+        self.history.prev_entries.values().rev().map(String::as_str)
+    }
+
     /// Changes the current line to the previous history entry if available
     pub fn history_back(&mut self) -> io::Result<()> {
         if self.history.prev_entries.is_empty()
@@ -159,7 +166,8 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         {
             (self.history.top, std::mem::take(&mut self.history.temp_top))
         } else {
-            self.history.next()
+            self.history
+                .next()
                 .map(|(&pos, entry)| (pos, entry.to_string()))
                 .expect("`curr_pos` is neither top nor `last_position`, so there must be at least one more entry")
         };
