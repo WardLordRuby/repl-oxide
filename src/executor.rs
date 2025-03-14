@@ -9,8 +9,8 @@ use std::{
 ///
 /// [`clap_derive::Parser`]: <https://docs.rs/clap/latest/clap/trait.Parser.html>
 #[inline]
-pub fn format_for_clap(tokens: Vec<String>) -> impl Iterator<Item = String> {
-    std::iter::once(String::new()).chain(tokens)
+pub fn format_for_clap<S: AsRef<str>>(tokens: &[S]) -> impl Iterator<Item = &str> {
+    std::iter::once("").chain(tokens.iter().map(AsRef::as_ref))
 }
 
 /// The suggested return type for commands

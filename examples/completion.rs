@@ -236,7 +236,7 @@ impl Executor<Stdout> for CommandContext {
         repl_handle: &mut Repl<Self, Stdout>,
         user_tokens: Vec<String>,
     ) -> io::Result<CommandHandle<Self, Stdout>> {
-        match Command::try_parse_from(format_for_clap(user_tokens)) {
+        match Command::try_parse_from(format_for_clap(&user_tokens)) {
             Ok(command) => match command {
                 Command::Echo { args } => CommandContext::echo(repl_handle, args),
                 Command::Roll { sides } => self.roll(repl_handle, sides),
