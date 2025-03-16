@@ -14,7 +14,7 @@ use crossterm::{
     QueueableCommand,
 };
 
-/// Queues a single line to be displayed on the given writer to normalize accross targets.
+/// Queues a single line to be displayed on the given writer to normalize across targets.
 ///
 /// Internally just appends ``"\r\n"`` to the end of the given input. If you are looking to convert multiple
 /// line endings at once use: [`print_lines`] or [`Repl::print_lines`]
@@ -39,7 +39,7 @@ where
     Ok(())
 }
 
-/// Queues a single color encoded line to be displayed on the given writer to normalize accross targets.
+/// Queues a single color encoded line to be displayed on the given writer to normalize across targets.
 ///
 /// Only will color encode [`RED`] if the [`Repl`]'s line stylization is enabled. Appends `"\r\n"` to the
 /// end of the given input.
@@ -68,7 +68,7 @@ where
     Ok(())
 }
 
-/// Queues multi line text to be displayed on the given writer to normalize accross targets.
+/// Queues multi line text to be displayed on the given writer to normalize across targets.
 ///
 /// Replaces all new line characters with `"\r\n"`. Supports printing multi-line strings. If you do not need
 /// to convert multiple line endings at once use: [`println`] or [`Repl::println`]
@@ -105,7 +105,7 @@ where
 }
 
 impl<Ctx, W: Write> Repl<Ctx, W> {
-    /// Queues text to be displayed on the repl's writer to normalize accross targets. Appends `"\r\n"` to the end
+    /// Queues text to be displayed on the repl's writer to normalize across targets. Appends `"\r\n"` to the end
     /// of the given input. If you are looking to convert multiple line endings at once use:
     /// [`Repl::print_lines`].
     ///
@@ -124,7 +124,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         println(&mut self.term, print)
     }
 
-    /// Queues color encoded text to be displayed on the repl's writer to normalize accross targets. Only will
+    /// Queues color encoded text to be displayed on the repl's writer to normalize across targets. Only will
     /// color encode [`RED`] if the [`Repl`]'s line stylization is enabled. Appends `"\r\n"` to the end of the
     /// given input.
     ///
@@ -143,7 +143,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         eprintln(&mut self.term, print, self.line.style_enabled)
     }
 
-    /// Queues text to be displayed on the repl's writer to normalize accross targets. Replaces all new line
+    /// Queues text to be displayed on the repl's writer to normalize across targets. Replaces all new line
     /// characters with `"\r\n"`. Supports printing multi-line strings. If you do not need to convert multiple
     /// line endings at once use: [`Repl::println`].
     ///

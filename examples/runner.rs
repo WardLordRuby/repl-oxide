@@ -14,7 +14,7 @@ use tokio::time::{sleep, Duration};
 #[derive(Parser)]
 #[command(
     name = "", // Leaving name empty will give us more accurate clap help and error messages
-    about = "Example app showing repl-oxide's async and persistant state nature"
+    about = "Example app showing repl-oxide's async and persistent state nature"
 )]
 enum Command {
     /// A running total of all inputted numbers
@@ -42,13 +42,13 @@ impl CommandContext {
     ) -> io::Result<CommandHandle<Self, Stdout>> {
         repl_handle.println("Performing async tasks")?;
 
-        // repl-oxide currently does not have an interface for accessing the supplied writer accross thread
+        // repl-oxide currently does not have an interface for accessing the supplied writer across thread
         // bounds. Generally it works well to just print after tasks have ran to completion or for persistent
         // tasks via channel see: 'examples/spawner.rs' or 'examples/basic_custom.rs'. However, most of the
         // time it will be possible to construct new exclusive references and the `println` function will work
         // just fine.
 
-        // Refer to documentaion on `println` / `print_lines` for why they are used instead of `std::println!`.
+        // Refer to documentation on `println` / `print_lines` for why they are used instead of `std::println!`.
 
         let t_1 = tokio::spawn(async {
             sleep(Duration::from_secs(1)).await;

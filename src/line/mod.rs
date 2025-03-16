@@ -129,13 +129,13 @@ impl LineData {
 #[derive(Clone, Copy)]
 enum GhostTextMeta {
     History { p: usize },
-    Recomendation { len: usize },
+    Recommendation { len: usize },
 }
 
 // MARK: TODO
 // Add support for a movable cursor
 // currently `CompletionState` only supports char events at line end
-// `CompletionState` will have to be carefully mannaged if cursor is moveable
+// `CompletionState` will have to be carefully managed if cursor is moveable
 
 /// Error type for parsing user input into tokens
 #[non_exhaustive]
@@ -159,7 +159,7 @@ impl Display for ParseErr {
 ///
 /// `EventLoop` enum acts as a control router for how your read eval print loop should react to input events.
 /// It provides mutable access back to your `Ctx` both synchronously and asynchronously. If your callback
-/// can error the [`conditionally_remove_hook`] method can restore the intial state of the `Repl` as
+/// can error the [`conditionally_remove_hook`] method can restore the initial state of the `Repl` as
 /// well as remove the queued input hook that was responsible for spawning the callback that resulted in an
 /// error.  
 ///
@@ -318,7 +318,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         self.line.input.push_str(new);
         self.line.len += new.chars().count() as u16;
         self.move_to_end(self.line_len())?;
-        self.update_completeion();
+        self.update_completion();
         Ok(())
     }
 
@@ -381,7 +381,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
 
         if std::mem::take(&mut self.command_entered) {
             // Always assume the worst case that the user wrote into the writer without entering a new line
-            // reseting the current line should make it evident the user has a bug in there code, while the
+            // resetting the current line should make it evident the user has a bug in there code, while the
             // library ensures to always be displaying an acceptable state
             self.cursor_at_start = false;
         }
@@ -422,7 +422,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                     .map(|str| (str, GhostTextMeta::History { p: *p }))
             })
             .or_else(|| {
-                let (recomendation, kind) = self
+                let (recommendation, kind) = self
                     .completion
                     .recommendations
                     .first()
@@ -445,9 +445,9 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                     return None;
                 }
 
-                recomendation
+                recommendation
                     .strip_prefix(last_token)
-                    .map(|str| (str, GhostTextMeta::Recomendation { len: str.len() }))
+                    .map(|str| (str, GhostTextMeta::Recommendation { len: str.len() }))
             })
         else {
             self.ghost_text = None;
@@ -476,7 +476,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     pub fn insert_char(&mut self, c: char) {
         self.line.input.push(c);
         self.line.len = self.line.len.saturating_add(1);
-        self.update_completeion();
+        self.update_completion();
     }
 
     /// Pops a char from the input line and tries to update suggestions if completion is enabled
@@ -485,7 +485,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         self.move_to_beginning(self.line_len())?;
         self.term.queue(Clear(FromCursorDown))?;
         self.line.len = self.line.len.saturating_sub(1);
-        self.update_completeion();
+        self.update_completion();
         Ok(())
     }
 
@@ -536,7 +536,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     pub fn change_line(&mut self, line: String) -> io::Result<String> {
         let prev = self.change_line_raw(line)?;
         self.reset_completion();
-        self.update_completeion();
+        self.update_completion();
         Ok(prev)
     }
 
@@ -574,7 +574,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                         .clone(),
                 )?;
             }
-            GhostTextMeta::Recomendation { len } => {
+            GhostTextMeta::Recommendation { len } => {
                 let rec_len = self.completion.recommendations[0].len();
                 let ghost_text = &self.completion.recommendations[0][rec_len - len..];
                 self.append_to_line(ghost_text)?;

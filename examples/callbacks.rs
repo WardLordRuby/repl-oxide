@@ -44,13 +44,13 @@ fn quit() -> io::Result<CommandHandle<CommandContext, Stdout>> {
     );
 
     // Since our `event_hook` does not return any `EventLoop::AsyncCallback` event we can use `with_new_uid`
-    // here. If we wanted to modify the state of our `CommandContext` within our `input_hook` we could use
-    // either callback type to do so. If said callback could error we would have to ensure that the error
-    // has the same `UID` and the outer `InputHook`
+    // here. If we needed to perform async operations on our `CommandContext` within our `input_hook` we could
+    // use an `AsyncCallback` to do so. If said callback could error we would have to ensure that the error
+    // has the same `UID` and the outer `InputHook` specified via `InputHook::new`
     let input_event_hook = InputHook::with_new_uid(
         line_changes,
         // Define how our `InputEventHook` reacts to `KeyEvent`s of `KeyEventKind::Press`. This could also
-        // easily be set up to only react apon enter, for simplicity we will just react apon press
+        // easily be set up to only react upon enter, for simplicity we will just react upon press
         |repl_handle, _command_context, event| match event {
             Event::Key(
                 KeyEvent {

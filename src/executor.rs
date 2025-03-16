@@ -15,7 +15,7 @@ pub fn format_for_clap<S: AsRef<str>>(tokens: &[S]) -> impl Iterator<Item = &str
 
 /// The suggested return type for commands
 ///
-/// This is enforced inside the [`Executor`] trait. Provides staight forward returns and a option to insert a custom
+/// This is enforced inside the [`Executor`] trait. Provides straight forward returns and a option to insert a custom
 /// [`InputHook`] to take control over [`KeyEvent`] processing
 ///
 /// [`KeyEvent`]: <https://docs.rs/crossterm/latest/crossterm/event/struct.KeyEvent.html>
@@ -73,7 +73,7 @@ pub enum CommandHandle<Ctx, W: Write> {
 /// [`spawn`]: crate::line::Repl::spawn
 /// [`try_parse_from`]: <https://docs.rs/clap/latest/clap/trait.Parser.html#method.try_parse_from>
 /// [`clap_derive::Parser`]: <https://docs.rs/clap/latest/clap/trait.Parser.html>
-pub trait Executor<W: Write + Send>: Sized + Send {
+pub trait Executor<W: Write>: Sized {
     fn try_execute_command(
         &mut self,
         repl_handle: &mut Repl<Self, W>,

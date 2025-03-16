@@ -68,9 +68,9 @@ const fn init_command_scheme() -> CommandScheme {
         RecData::command_set(
             // Specify our command alias map
             Some(&COMMANDS_ALIAS),
-            // Specify our commands to recomend
+            // Specify our commands to recommend
             Some(&COMMAND_RECS),
-            // Discribe that commands is not an end node
+            // Describe that commands is not an end node
             false,
         ),
         &COMMAND_INNER,
@@ -84,19 +84,19 @@ const COMMAND_RECS: [&str; 4] = ["echo", "roll", "quit", "exit"];
 // Mapping of our command to it's aliases (eg. "quit" index -> "exit" index)
 const COMMANDS_ALIAS: [(usize, usize); 1] = [(2, 3)];
 
-// Array of our recomendations for our "echo" command. Any aliases would follow as they did in `COMMAND_RECS`
+// Array of our recommendations for our "echo" command. Any aliases would follow as they did in `COMMAND_RECS`
 const ECHO_RECS: [&str; 2] = ["case", "reverse"];
 
 // Mapping of our echo arguments to their short counter part
 const ECHO_SHORT: [(usize, &str); 2] = [(0, "c"), (1, "r")];
 
-// Array of our recomendations for our `CaseOptions`
+// Array of our recommendations for our `CaseOptions`
 const ECHO_CASE_RECS: [&str; 2] = ["lower", "upper"];
 
 const ROLL_RECS: [&str; 1] = ["sides"];
 const ROLL_SHORT: [(usize, &str); 1] = [(0, "s")];
 
-// All command recomendations must have `ROOT` set as their parent
+// All command recommendations must have `ROOT` set as their parent
 const COMMAND_INNER: [InnerScheme; 3] = [
     // echo
     InnerScheme::new(
@@ -108,12 +108,12 @@ const COMMAND_INNER: [InnerScheme; 3] = [
             Some(&ECHO_SHORT),
             // Specify the "echo" commands recommendations
             Some(&ECHO_RECS),
-            // Discribe the recomendation kind as arguments where "echo" has one required input
+            // Describe the recommendation kind as arguments where "echo" has one required input
             RecKind::argument_with_required_user_defined(1),
-            // List as not the end of the recomendation tree
+            // List as not the end of the recommendation tree
             false,
         ),
-        // Link to interior recomendations for the "echo" command
+        // Link to interior recommendation for the "echo" command
         Some(&ECHO_INNER),
     ),
     // roll
@@ -126,16 +126,16 @@ const COMMAND_INNER: [InnerScheme; 3] = [
             Some(&ROLL_SHORT),
             // Specify the "roll" commands recommendations
             Some(&ROLL_RECS),
-            // Discribe the recomendation kind as arguments where "roll" has no required inputs
+            // Describe the recommendation kind as arguments where "roll" has no required inputs
             RecKind::argument_with_no_required_inputs(),
-            // List as not the end of the recomendation tree
+            // List as not the end of the recommendation tree
             false,
         ),
-        // Link to interior recomendations for the "roll" command
+        // Link to interior recommendation for the "roll" command
         Some(&ROLL_INNER),
     ),
     // quit
-    // Discribe "quit" as an end node
+    // Describe "quit" as an end node
     InnerScheme::end(Parent::Root),
 ];
 
@@ -149,17 +149,17 @@ const ECHO_INNER: [InnerScheme; 2] = [
             None,
             // `ECHO_CASE_RECS` has no short counter parts
             None,
-            // Specify the "case" argument recomendations
+            // Specify the "case" argument recommendation
             Some(&ECHO_CASE_RECS),
-            // Discribe the recomendation kind as `value` (set enum) with max input of 1
+            // Describe the recommendation kind as `value` (set enum) with max input of 1
             RecKind::value_with_num_args(1),
-            // List as not the end of the recomendation tree
+            // List as not the end of the recommendation tree
             false,
         ),
         None,
     ),
     // reverse
-    // List the reverse command as a flag and is also not the end of the recomendation tree
+    // List the reverse command as a flag and is also not the end of the recommendation tree
     // since it doesn't matter the position of any 3 "echo" arguments
     InnerScheme::flag(Parent::Entry(COMMAND_RECS[0]), false),
 ];
@@ -169,9 +169,9 @@ const ROLL_INNER: [InnerScheme; 1] = [
     InnerScheme::empty_with(
         // Link to the parent command "roll"
         Parent::Entry(COMMAND_RECS[1]),
-        // Discribe the recomendation kind as `UserDefinded` with max input of 1
+        // Describe the recommendation kind as `UserDefined` with max input of 1
         RecKind::user_defined_with_num_args(1),
-        // List as not the end of the recomendation tree
+        // List as not the end of the recommendation tree
         false,
     ),
 ];

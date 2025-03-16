@@ -42,13 +42,13 @@ impl History {
 
     /// Returns the position of the first entry
     #[inline]
-    fn first_positon(&self) -> Option<usize> {
+    fn first_position(&self) -> Option<usize> {
         self.prev_entries.keys().next().copied()
     }
 
     /// Returns the position of the most recent entry
     #[inline]
-    fn last_positon(&self) -> Option<usize> {
+    fn last_position(&self) -> Option<usize> {
         self.prev_entries.keys().next_back().copied()
     }
 
@@ -119,7 +119,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         self.history.push(add);
     }
 
-    /// Iterates over entries in the history from most recient to oldest. If you want an owned copy and to maintain
+    /// Iterates over entries in the history from most recent to oldest. If you want an owned copy and to maintain
     /// the correct order of the history stack see: [`Self::export_history`].
     #[inline]
     pub fn history_entries(&self) -> impl Iterator<Item = &str> {
@@ -129,7 +129,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// Changes the current line to the previous history entry if available
     pub fn history_back(&mut self) -> io::Result<()> {
         if self.history.prev_entries.is_empty()
-            || self.history.curr_pos == self.history.first_positon().expect("history is not empty")
+            || self.history.curr_pos == self.history.first_position().expect("history is not empty")
         {
             self.set_uneventful();
             return Ok(());
@@ -139,7 +139,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             .history
             .next_back()
             .map(|(&pos, entry)| (pos, entry.to_string()))
-            .expect("missed early return so `curr_pos` must be greater than the `first_positon`");
+            .expect("missed early return so `curr_pos` must be greater than the `first_position`");
 
         let prev = self.change_line(entry)?;
 
@@ -161,7 +161,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         let (pos, entry) = if self.history.curr_pos
             == self
                 .history
-                .last_positon()
+                .last_position()
                 .expect("missed early return so `history_back` must have been called before")
         {
             (self.history.top, std::mem::take(&mut self.history.temp_top))

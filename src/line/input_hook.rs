@@ -32,7 +32,7 @@ impl<Ctx, W: Write, T> InputEventHook<Ctx, W> for T where
 {
 }
 
-/// Constructor and deconstructor for an [`InputHook`]
+/// Constructor and destructor for an [`InputHook`]
 ///
 /// A pair of this callback type can be constructed via [`HookStates::new`], then passed to
 /// either `InputHook` constructor ([`new`] / [`with_new_uid`]) for assignment.
@@ -86,12 +86,12 @@ impl<Ctx, W: Write, T> AsyncCallback<Ctx, W> for T where
 ///
 /// Hooks can be initialized with a [`HookLifecycle`] that allows for a place to modify the current state
 /// of the [`Repl`] and/or the users generic `Ctx`. To do so use [`HookStates::new`], note you must also
-/// supply a seperate callback to revert the changes back to your desired state when the `InputHook` is dropped.
+/// supply a separate callback to revert the changes back to your desired state when the `InputHook` is dropped.
 ///
 /// Otherwise use [`HookStates::no_change`] to not specify new and previous states.
 ///
 /// Hooks require a [`InputEventHook`] this callback can be is entirely responsible for controlling _all_
-/// reactions to [`KeyEvent`]'s of kind: [`KeyEventKind::Press`]. This will act as a manual overide of the
+/// reactions to [`KeyEvent`]'s of kind: [`KeyEventKind::Press`]. This will act as a manual override of the
 /// libraries event processor. You will have access to manually determine what methods are called on the
 /// [`Repl`]. See: [callbacks.rs]
 ///
@@ -106,7 +106,7 @@ pub struct InputHook<Ctx, W: Write> {
     pub(super) event_hook: Box<dyn InputEventHook<Ctx, W>>,
 }
 
-/// Holds the constructor and deconstructor of an [`InputHook`]
+/// Holds the constructor and destructor of an [`InputHook`]
 ///
 /// Can hold 2 unique [`HookLifecycle`] callbacks.
 pub struct HookStates<Ctx, W: Write> {
@@ -166,7 +166,7 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
     ///
     /// The library supplied repl runners ([`run`] / [`spawn`]) or event processor macro [`general_event_process`]
     /// will call [`conditionally_remove_hook`] when any callback errors. When writing your own repl it is
-    /// recomended to implement this logic.  
+    /// recommended to implement this logic.  
     ///
     /// [`AsyncCallback`]: crate::line::input_hook::AsyncCallback
     /// [`with_new_uid`]: Self::with_new_uid
@@ -263,10 +263,10 @@ pub enum HookControl {
     Release,
 }
 
-/// Details ouput information for custom event processing.
+/// Details output information for custom event processing.
 ///
 /// `HookedEvent` is the return type of [`InputEventHook`]. Contains both the instructions for the read eval
-/// print loop and the new state of [`InputEventHook`]. A `InputEventHook`'s set deconstructor, will allways
+/// print loop and the new state of [`InputEventHook`]. A `InputEventHook`'s set destructor, will always
 /// execute prior to set [`EventLoop`] instructions if `HookControl::Release` is specified. All `HookedEvent`
 /// constructors can not fail. They are always wrapped in `Ok` to reduce boilerplate
 pub struct HookedEvent<Ctx, W: Write> {

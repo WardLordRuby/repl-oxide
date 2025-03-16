@@ -109,7 +109,7 @@ async fn main() -> io::Result<()> {
         tokio::select! {
             biased;
 
-            // Process each event recieved from the event stream
+            // Process each event received from the event stream
             Some(event_result) = event_stream.next() => {
                 // Use the library supplied default event processor
                 general_event_process!(&mut repl, &mut command_ctx, event_result)

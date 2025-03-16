@@ -17,7 +17,7 @@
 /// }
 /// ```
 ///
-/// This macro requries you to implement [`Executor`] on your `Ctx`.
+/// This macro requires you to implement [`Executor`] on your `Ctx`.
 ///
 /// Internally uses tracing's [`error!`] to log any errors that a user created [`AsyncCallback`] produces.
 /// As well as emitting a [`trace!`] event if the [`InputHook`] is successfully removed after the error.

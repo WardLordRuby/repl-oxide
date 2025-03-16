@@ -34,7 +34,7 @@ macro_rules! any_true {
 /// The current structure that holds all completion items and meta-data
 ///
 /// The current implementation only works when the name-space of commands, arguments, and their aliases/shorts
-/// do not overlap, overlaping names must return the exact same `RecData`, help is special cased to work as
+/// do not overlap, overlapping names must return the exact same `RecData`, help is special cased to work as
 /// both a command and argument `inner` must ALWAYS contain the same number of elements as `commands.starting_alias`
 pub struct CommandScheme {
     /// command names followed by aliases
@@ -62,8 +62,8 @@ pub struct CommandScheme {
 /// Tree node of [`CommandScheme`]
 ///
 /// Notes:  
-/// - Recomendations within `data` set as `RecKind::Value` will be flattened into a HashSet.  
-///   Access to the set is provided through a seprate map `value_sets` where the lookup key  
+/// - Recommendations within `data` set as `RecKind::Value` will be flattened into a HashSet.  
+///   Access to the set is provided through a separate map `value_sets` where the lookup key  
 ///   is the index you get back from `rec_map` when hashing the parent node  
 /// - `RecKinds`: `Value` and `UserInput` must provide a `Range<usize>` of inputs that are expected to follow  
 ///
@@ -92,7 +92,7 @@ pub struct RecData {
     alias: Option<&'static [(usize, usize)]>,
     /// Required data if containing recs support a short arg syntax
     short: Option<&'static [(usize, &'static str)]>,
-    /// Recommendations followed by recomendation aliases
+    /// Recommendations followed by recommendation aliases
     // Index of rec in `recs` -> short char
     recs: Option<&'static [&'static str]>,
     /// Kind of data stored
@@ -302,7 +302,7 @@ impl From<&'static CommandScheme> for Completion {
                     None => true,
                     Some(j) => list[j] == data,
                 },
-                "duplicate recomendation entries _must_ have identical nodes"
+                "duplicate recommendation entries _must_ have identical nodes"
             );
         }
         fn try_insert_rec_set(
@@ -338,7 +338,7 @@ impl From<&'static CommandScheme> for Completion {
                     .iter()
                     .filter(|(rec_i, _)| *rec_i == target)
                     .map(|&(_, alias_i)| {
-                        recs.expect("tried to set alias when no recomendations were supplied")
+                        recs.expect("tried to set alias when no recommendations were supplied")
                             [alias_i]
                     })
                     .for_each(|alias| {
@@ -366,7 +366,7 @@ impl From<&'static CommandScheme> for Completion {
                     assert_eq!(
                         expected_len,
                         inner_inner.len(),
-                        "invalid number of inner element discriptions"
+                        "invalid number of inner element descriptions"
                     );
                     for (i, (&argument, inner)) in recs
                         .expect("is some")
@@ -396,7 +396,7 @@ impl From<&'static CommandScheme> for Completion {
                 _ => {
                     assert!(
                         inner.inner.is_none(),
-                        "currently it is only valid to provide inner discriptions for arguments"
+                        "currently it is only valid to provide inner descriptions for arguments"
                     );
                     assert!(
                         inner.data.short.is_none(),
@@ -440,7 +440,7 @@ impl From<&'static CommandScheme> for Completion {
         let mut recommendations = value
             .commands
             .recs
-            .expect("`CommandScheme` supplied with no recomendations")[..expected_len]
+            .expect("`CommandScheme` supplied with no recommendations")[..expected_len]
             .to_vec();
         recommendations.push(HELP_STR);
         Self {
@@ -454,9 +454,9 @@ impl From<&'static CommandScheme> for Completion {
     }
 }
 
-/// On startup the [`CommandScheme`] tree structure gets flattended into this structure
+/// On startup the [`CommandScheme`] tree structure gets flattened into this structure
 ///
-/// The goal of `Completion` is to provide efficent lookups to the correct data that should be used to
+/// The goal of `Completion` is to provide efficient lookups to the correct data that should be used to
 /// compute the best recommendations for the user with any given input. `Completion` also holds the current
 /// line state in field `input` `CompletionState` aims to provide accurate slices into the string
 /// `Repl.line.input` since this struct is nested within `Repl` we manage str slicing by indexes and lens  
@@ -478,7 +478,7 @@ struct Indexer {
     /// [`Completion.rec_list`]: Completion
     list: (usize, usize),
 
-    /// Flag meaning more than one catagory of recommendations are valid at the same time, and the index
+    /// Flag meaning more than one category of recommendations are valid at the same time, and the index
     /// `Self.list.1` should be used to give accurate recommendations
     multiple: bool,
 
@@ -487,7 +487,7 @@ struct Indexer {
     /// [`Completion.recommendations`]: Completion
     in_list_2: Vec<i8>,
 
-    /// The index of the currently suggested recomendation within [`Completion.recommendations`]  
+    /// The index of the currently suggested recommendation within [`Completion.recommendations`]  
     /// This value is a signed int because [`USER_INPUT`] is used as marker of when it is time to loop back around
     /// and recommend the original text that the user used to start the completion chain.
     ///
@@ -722,17 +722,14 @@ impl Completion {
         self.rec_list.is_empty()
     }
 
-    /// Aquires the [`RecData`] of any [`recommendation`] via its index
+    /// Acquires the [`RecData`] of any [`recommendation`] via its index
     ///
-    /// This method assumes the caller has checked that the given index is not [`USER_INPUT`]
-    /// in that case this method would be pointless to call since it does not have any `RecData`
+    /// Note: this method is pointless to call if the given index is [`USER_INPUT`], as user input
+    /// is not a recommendation, hence always returning a reference to an _invalid_ `RecData`
     ///
     /// [`recommendation`]: Completion
-    pub(super) fn rec_data_from_index(&self, recomendation_i: i8) -> &RecData {
-        if !self.indexer.multiple {
-            return self.rec_list[self.indexer.list.0];
-        }
-        if self.indexer.in_list_2.contains(&recomendation_i) {
+    pub(super) fn rec_data_from_index(&self, recommendation_i: i8) -> &RecData {
+        if self.indexer.multiple && self.indexer.in_list_2.contains(&recommendation_i) {
             return self.rec_list[self.indexer.list.1];
         }
         self.rec_list[self.indexer.list.0]
@@ -803,13 +800,13 @@ impl Completion {
     }
 
     /// only counts values until `count_till` is found, if `count_till` is not found it will return the last registered token in the
-    /// input `slice`. `SliceData` is _only_ ever `None` if their are 0 tokens in the input `slice`, `Some(SliceData)` does not gaurentee  
+    /// input `slice`. `SliceData` is _only_ ever `None` if their are 0 tokens in the input `slice`, `Some(SliceData)` does not guarantee  
     /// the containing `SliceData` is of `RecKind`: `count_till` or has a valid `hash_i` - in the case that the first token is returned  
     ///
     /// NOTES:  
-    ///  - unexpected behavior is _gaurenteed_ for returned `SliceData` if the input `slice` has been sliced from the beginning,  
+    ///  - unexpected behavior is _guaranteed_ for returned `SliceData` if the input `slice` has been sliced from the beginning,  
     ///    the start of `slice`, must align with the start of `line_trim_start`  
-    ///  - if you only desire the count of vals, trim input `slice` to include slice of all vals to be counted plus the begining 'root' token  
+    ///  - if you only desire the count of vals, trim input `slice` to include slice of all vals to be counted plus the beginning 'root' token  
     ///    then use `RecKind::Null` to avoid hashing counted tokens  
     fn count_vals_in_slice(&self, slice: &str, count_till: &RecKind) -> (Option<SliceData>, usize) {
         let mut nvals = 0;
@@ -1042,7 +1039,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     }
 
     /// Updates the suggestions for the current user input
-    pub fn update_completeion(&mut self) {
+    pub fn update_completion(&mut self) {
         if !self.line.comp_enabled {
             return;
         }
@@ -1050,7 +1047,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         let line_trim_start = self.line.input.trim_start();
         if line_trim_start.is_empty() {
             // `comp_enabled` can only be set when `!Completion.is_empty()` via checks in `enable_completion` and
-            // `ReplBuilder::build`. Making it safe to call `default_recomendations` here
+            // `ReplBuilder::build`. Making it safe to call `default_recommendations` here
             self.completion.set_default_recommendations_unchecked();
             self.line.err = false;
             self.completion.input.ending = LineEnd::default();
@@ -1144,7 +1141,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             let kind = new
                 .as_mut()
                 .and_then(|token| {
-                    // Saftey: can call into `to_slice_unchecked` since the above slice input to `try_parse_token_from_end` and `count_vals_in_slice`
+                    // Safety: can call into `to_slice_unchecked` since the above slice input to `try_parse_token_from_end` and `count_vals_in_slice`
                     // both use `line_trim_start` and the beginning of `line_trim_start` was not sliced
                     let token_slice = token.to_slice_unchecked(line_trim_start);
                     (token_slice == HELP_ARG || token_slice == HELP_ARG_SHORT).then(|| {
@@ -1156,7 +1153,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
 
             match kind {
                 &RecKind::Argument(required) => {
-                    // track the positon of user defined user required inputs for the current command
+                    // track the position of user defined user required inputs for the current command
                     match new {
                         Some(SliceData {
                             hash_i: INVALID,
@@ -1375,7 +1372,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             return Ok(());
         }
 
-        let recomendation = loop {
+        let recommendation = loop {
             self.completion.indexer.recs += direction.to_int();
 
             match self.completion.indexer.recs {
@@ -1390,7 +1387,6 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 break self.curr_token();
             } else {
                 let next = self.completion.recommendations[self.completion.indexer.recs as usize];
-                // Saftey: can call into `rec_data_from_unchecked` since we guard against the unsafe input above
                 if match self
                     .completion
                     .rec_data_from_index(self.completion.indexer.recs)
@@ -1413,12 +1409,12 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 .input
                 .rsplit_once(char::is_whitespace)
                 .map_or_else(
-                    || recomendation.to_string(),
+                    || recommendation.to_string(),
                     |(pre, _)| {
                         format!(
-                            "{pre} {}{recomendation}",
+                            "{pre} {}{recommendation}",
                             if rec_is_arg
-                                && !recomendation.is_empty()
+                                && !recommendation.is_empty()
                                 && self.completion.indexer.recs != USER_INPUT
                             {
                                 "--"
@@ -1430,13 +1426,12 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 )
         };
 
-        let kind = if recomendation == HELP_STR {
+        let kind = if recommendation == HELP_STR {
             &self.completion.rec_list[HELP].kind
         } else if self.completion.indexer.recs == USER_INPUT {
-            // Set as `Command` because we do not need aditional formatting below in the `USER_INPUT` case
+            // Set as `Command` because we do not need additional formatting below in the `USER_INPUT` case
             &RecKind::Command
         } else {
-            // Saftey: can call into `rec_data_from_unchecked` since we guard against the unsafe input above
             &self
                 .completion
                 .rec_data_from_index(self.completion.indexer.recs)

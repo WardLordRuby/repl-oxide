@@ -205,7 +205,7 @@ fn stylize_input(input: &str) -> (String, bool) {
 struct QuoteSlice<'a> {
     /// Contains entire slice or through the last consecutive closed quote
     contains_quote: &'a str,
-    /// Char indice of the last found open quote
+    /// Char of the last found open quote
     open_quote: Option<char>,
     /// Remainder of slice after the last closed quote if their is no hanging open quote
     remainder: Option<&'a str>,

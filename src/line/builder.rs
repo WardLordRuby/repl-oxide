@@ -50,7 +50,7 @@ pub struct ReplBuilder<'a, W: Write> {
 
 /// Builder for [`Repl`]
 ///
-/// `Repl` must include a terminal that is compatable with executing commands via the `crossterm` crate.
+/// `Repl` must include a terminal that is compatible with executing commands via the `crossterm` crate.
 pub fn repl_builder<W: Write>(terminal: W) -> ReplBuilder<'static, W> {
     // await_debug_server(r"\\.\pipe\debug_log");
 
@@ -105,21 +105,20 @@ impl<W: Write> ReplBuilder<'_, W> {
         self
     }
 
-    /// Supply a default prompt the line should display, if none is supplied '>' is used.
+    /// Supply a default prompt the line should display, if none is supplied `'>'` is used.
     pub fn with_prompt(mut self, prompt: &str) -> Self {
         self.prompt = Some(String::from(prompt.trim()));
         self
     }
 
-    /// Supply a custom prompt separator to override the default prompt separator "> ".  
-    /// Generally you always want the prompt separator to end with a space
+    /// Supply a custom prompt separator to override the default prompt separator `'>'`.
     pub fn with_custom_prompt_separator(mut self, separator: &str) -> Self {
         self.prompt_end = Some(String::from(separator.trim()));
         self
     }
 
-    /// Supply history entries that the repl should start with. The end of the given `history` slice will
-    /// be the most recient.
+    /// Supply history entries that the repl should start with. The end of the given `entries` slice will
+    /// be the most recent.
     pub fn with_history_entries<S: AsRef<str>>(mut self, entries: &[S]) -> Self {
         self.starting_history = Some(History::from_iter(entries));
         self
