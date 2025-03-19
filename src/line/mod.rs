@@ -128,7 +128,7 @@ impl LineData {
 
 #[derive(Clone, Copy)]
 enum GhostTextMeta {
-    History { p: usize },
+    History { pos: usize },
     Recommendation { len: usize },
 }
 
@@ -419,7 +419,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             .iter()
             .find_map(|(p, prev)| {
                 prev.strip_prefix(self.input())
-                    .map(|str| (str, GhostTextMeta::History { p: *p }))
+                    .map(|str| (str, GhostTextMeta::History { pos: *p }))
             })
             .or_else(|| {
                 let (recommendation, kind) = self
@@ -566,11 +566,11 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         };
 
         match meta {
-            GhostTextMeta::History { p } => {
+            GhostTextMeta::History { pos } => {
                 self.change_line(
                     self.history
-                        .get(&p)
-                        .expect("set meta `p` is valid position")
+                        .get(&pos)
+                        .expect("set meta `pos` is valid position")
                         .clone(),
                 )?;
             }
