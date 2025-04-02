@@ -447,7 +447,7 @@ impl From<&'static CommandScheme> for Completion {
             recommendations,
             input: CompletionState::default(),
             rec_map,
-            rec_list,
+            rec_list: rec_list.into_boxed_slice(),
             value_sets,
             indexer: Indexer::default(),
         }
@@ -465,7 +465,7 @@ pub struct Completion {
     pub(super) recommendations: Vec<&'static str>,
     input: CompletionState,
     indexer: Indexer,
-    rec_list: Vec<&'static RecData>,
+    rec_list: Box<[&'static RecData]>,
     rec_map: HashMap<&'static str, usize>,
     value_sets: HashMap<usize, HashSet<&'static str>>,
 }
