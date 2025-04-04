@@ -2,8 +2,9 @@
 /*               cargo r --example completion --features="runner"               */
 
 use repl_oxide::{
+    clap::try_parse_from,
     completion::{CommandScheme, InnerScheme, Parent, RecData, RecKind},
-    executor::{format_for_clap, CommandHandle, Executor},
+    executor::{CommandHandle, Executor},
     repl_builder, Repl,
 };
 
@@ -236,15 +237,13 @@ impl Executor<Stdout> for CommandContext {
         repl_handle: &mut Repl<Self, Stdout>,
         user_tokens: Vec<String>,
     ) -> io::Result<CommandHandle<Self, Stdout>> {
-        match Command::try_parse_from(format_for_clap(&user_tokens)) {
+        match try_parse_from(&user_tokens) {
             Ok(command) => match command {
                 Command::Echo { args } => CommandContext::echo(repl_handle, args),
                 Command::Roll { sides } => self.roll(repl_handle, sides),
                 Command::Quit => Ok(CommandHandle::Exit),
             },
-            Err(err) => repl_handle
-                .print_lines(err.render().ansi().to_string())
-                .map(|_| CommandHandle::Processed),
+            Err(err) => repl_handle.print_clap_err(err),
         }
     }
 }

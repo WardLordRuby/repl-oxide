@@ -6,6 +6,13 @@ mod line;
 /// Collection of types used to implement the `Executor` trait
 pub mod executor;
 
+/// Collection of helpers to easily interact with Clap
+///
+/// This module helps to reduce boilerplate when working with Clap derive. [Repl::print_clap_err] is also included
+/// in this module. The `"clap"` feature flag is included by default with repl_oxide.
+#[cfg(feature = "clap")]
+pub mod clap;
+
 #[cfg(feature = "macros")]
 #[doc(hidden)]
 pub mod macros;

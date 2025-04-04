@@ -5,14 +5,6 @@ use std::{
     io::{self, Write},
 };
 
-/// Format tokens into what Clap's [`clap_derive::Parser`] trait expects
-///
-/// [`clap_derive::Parser`]: <https://docs.rs/clap/latest/clap/trait.Parser.html>
-#[inline]
-pub fn format_for_clap<S: AsRef<str>>(tokens: &[S]) -> impl Iterator<Item = &str> {
-    std::iter::once("").chain(tokens.iter().map(AsRef::as_ref))
-}
-
 /// The suggested return type for commands
 ///
 /// This is enforced inside the [`Executor`] trait. Provides straight forward returns and a option to insert a custom
@@ -40,7 +32,7 @@ pub enum CommandHandle<Ctx, W: Write> {
 ///         repl_handle: Repl<Self, Stdout>,
 ///         user_tokens: Vec<String>
 ///     ) -> io::Result<CommandHandle<Self, Stdout>> {
-///         match Command::try_parse_from(format_for_clap(user_tokens)) {
+///         match repl_oxide::clap::try_parse_from(&user_tokens) {
 ///             Ok(command) => match command {
 ///                 /*
 ///                     Route to command functions that return `io::Result<CommandHandle>`
@@ -48,9 +40,7 @@ pub enum CommandHandle<Ctx, W: Write> {
 ///                 Command::Version => self.print_version(),
 ///                 Command::Quit => self.quit().await,
 ///             },
-///             Err(err) => repl_handle
-///                 .print_lines(err.render().ansi().to_string())
-///                 .map(|_| CommandHandle::Processed),
+///             Err(err) => repl_handle.print_clap_err(err),
 ///         }
 ///     }
 /// }

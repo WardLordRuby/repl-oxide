@@ -9,10 +9,11 @@ categories = ["command-line-interface"]
 rust-version = "1.75.0"
 
 [features]
+default = ["clap"]
 macros = ["dep:tracing"]
 runner = ["macros"]
 spawner = ["runner", "tokio/macros", "tokio/rt"]
-all = ["spawner"]
+all = ["default", "spawner"]
 
 [package.metadata.docs.rs]
 rustdoc-args = ["--cfg", "docsrs"]
@@ -26,6 +27,7 @@ strip-ansi = "0.1.0"
 tokio = { version = "1.43.0", features = ["time"] }
 tokio-stream = "0.1.17"
 tracing = { version = "0.1.41", default-features = false, features = ["attributes"], optional = true }
+clap = { version = "4.5.27", default-features = false, features = ["std", "color"], optional = true }
 
 [dev-dependencies]
 clap = { version = "4.5.27", features = ["derive"] }
