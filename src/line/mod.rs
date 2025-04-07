@@ -159,13 +159,13 @@ impl Display for ParseErr {
 ///
 /// `EventLoop` enum acts as a control router for how your read eval print loop should react to input events.
 /// It provides mutable access back to your `Ctx` both synchronously and asynchronously. If your callback
-/// can error the [`conditionally_remove_hook`] method can restore the initial state of the `Repl` as
+/// can error the [`remove_current_hook_by_error`] method can restore the initial state of the `Repl` as
 /// well as remove the queued input hook that was responsible for spawning the callback that resulted in an
 /// error.  
 ///
 /// `TryProcessInput` uses [`shellwords::split`] to parse user input into common shell tokens.
 ///
-/// [`conditionally_remove_hook`]: Repl::conditionally_remove_hook
+/// [`remove_current_hook_by_error`]: Repl::remove_current_hook_by_error
 /// [`shellwords::split`]: <https://docs.rs/shell-words/latest/shell_words/fn.split.html>
 pub enum EventLoop<Ctx, W: Write> {
     Continue,
@@ -623,7 +623,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     ///             EventLoop::AsyncCallback(callback) => {
     ///                 if let Err(err) = callback(&mut repl, &mut command_context).await {
     ///                     repl.eprintln(err)?;
-    ///                     repl.conditionally_remove_hook(&err)?;
+    ///                     repl.remove_current_hook_by_error(&err)?;
     ///                 }
     ///             },
     ///             EventLoop::TryProcessInput(Ok(user_tokens)) => {
