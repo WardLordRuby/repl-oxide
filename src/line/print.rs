@@ -164,8 +164,8 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
 
     /// In almost all cases this is not the method you are looking for, [`Repl::println`], [`Repl::eprintln`], and
     /// [`Repl::print_lines`] all take care of this for you. In the rare case you want to write into the repl manually
-    /// you can use this method, however you will run into undefined behavior if what is written into the `Repl` does
-    /// not end in a new line by the time [`Repl::render`] is called again.
+    /// you can use this method, however anything written into the `Repl` that does not end in a new line by the time
+    /// [`Repl::render`] is called again will be cleared.
     #[inline(always)]
     pub fn prep_for_background_msg(&mut self) -> io::Result<()> {
         execute!(self.term, BeginSynchronizedUpdate)?;
