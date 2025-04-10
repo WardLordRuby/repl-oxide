@@ -235,11 +235,21 @@ impl HookID {
         HOOK_UID.fetch_add(1, Ordering::SeqCst)
     }
 
+    // Internal use of `std::mem::discriminant` would fix the noted issue but introduces problems of its own:
+    // - The type system does not have a way to ensure the `T` that is passed in by the user is in fact an `Enum`
+    // - The generic `T` would propagate all the way up through the containing structs and add way too much
+    //   generic type noise
+    //   - It could be `Box<dyn T>` however relying on v-tables does not feel very rusty
+
     /// This method will create a new `HookID` with a unique uid and tag it with the given `tag`.
     /// To create a new `HookID` with out a designated tag use [`HookID::default`]
     ///
-    /// `tag` must impl `Into<i32>`, As it would be most common to make the `tag` type an enum with
-    /// only unit variants.
+    /// `tag` must impl `Into<i32>`, As it would be most common to make the `tag` type an enum with only unit variants.
+    ///
+    /// ### Note:
+    /// This type of comparison extracts the discriminant's numerical value of an enum, meaning **only** one enum can
+    /// be used to hold tagged variants, eg. `assert_eq!(A::1 as i32, B::1 as i32)`.
+    ///
     /// ## Example
     /// ```
     /// enum MyHookTag {
