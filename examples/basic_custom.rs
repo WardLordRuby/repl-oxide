@@ -11,11 +11,12 @@ use repl_oxide::{
 use std::{
     fmt::Display,
     io::{self, Stdout},
+    sync::Arc,
 };
 
 use clap::Parser;
 use tokio::{
-    sync::mpsc::Sender,
+    sync::Notify,
     time::{sleep, Duration},
 };
 
@@ -63,13 +64,11 @@ impl<T: Display> Display for ErrorMsg<T> {
     }
 }
 
-fn save_cache_every(period: Duration, sender: Sender<()>) -> tokio::task::JoinHandle<()> {
+fn save_cache_every(period: Duration, notify: Arc<Notify>) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         loop {
             sleep(period).await;
-            if sender.send(()).await.is_err() {
-                break;
-            };
+            notify.notify_one();
         }
     })
 }
@@ -91,11 +90,11 @@ async fn main() -> io::Result<()> {
         .build()
         .expect("input writer accepts crossterm commands");
 
-    // Create a channel to tell our repl when the cache should be updated
-    let (update_tx, mut update_rx) = tokio::sync::mpsc::channel(10);
+    // Create a notifier to tell our repl when the cache should be updated
+    let cache_updater = Arc::new(Notify::const_new());
 
     // Spawn example save cache event
-    let timer_loop = save_cache_every(Duration::from_secs(10), update_tx);
+    let timer_loop = save_cache_every(Duration::from_secs(10), Arc::clone(&cache_updater));
 
     loop {
         // Disregard key inputs while user commands are being processed
@@ -115,7 +114,7 @@ async fn main() -> io::Result<()> {
             }
 
             // Writing your own loop allows for awaiting custom events
-            Some(_) = update_rx.recv() => {
+            _ = cache_updater.notified() => {
                 if let Err(err) = save_cache() {
                     repl.println(err)?;
                 }
