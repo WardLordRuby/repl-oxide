@@ -1,6 +1,5 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 
-mod definitions;
 mod line;
 
 /// Collection of types used to implement the `Executor` trait
@@ -25,7 +24,7 @@ pub mod runner;
 #[doc(hidden)]
 pub mod spawner;
 
-pub use definitions::*;
+pub use line::style::ansi_code;
 pub use line::*;
 
 /// Re-export of [`strip_ansi`] the ported chalk regex

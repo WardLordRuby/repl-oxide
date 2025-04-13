@@ -1,7 +1,7 @@
 mod builder;
 mod history;
 mod print;
-mod style;
+pub(crate) mod style;
 
 /// Collection of types used for auto completion of user input
 pub mod completion;
@@ -12,13 +12,11 @@ pub mod input_hook;
 pub use builder::*;
 pub use print::*;
 
-use crate::{
-    ansi_code::{DIM_WHITE, RED, RESET},
-    line::{
-        completion::{Completion, Direction},
-        history::History,
-        input_hook::{AsyncCallback, HookControl, InputHook},
-    },
+use crate::line::{
+    completion::{Completion, Direction},
+    history::History,
+    input_hook::{AsyncCallback, HookControl, InputHook},
+    style::ansi_code::{DIM_WHITE, RED, RESET},
 };
 
 use std::{

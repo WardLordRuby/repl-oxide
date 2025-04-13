@@ -1,11 +1,26 @@
-use crate::{
-    ansi_code::{BLUE, GREY, RESET, YELLOW},
-    line::LineData,
-};
+use crate::line::LineData;
+use ansi_code::{BLUE, BOLD, GREY, RED_BOLD, RESET, YELLOW};
 
 use std::fmt::Display;
 
-use crossterm::style::{Color, Stylize};
+/// Collection of ansi color codes
+pub mod ansi_code {
+    use constcat::concat;
+
+    const RED_COLOR_CODE: &str = "31";
+
+    pub const RED: &str = concat!("\x1b[", RED_COLOR_CODE, "m");
+    pub const YELLOW: &str = "\x1b[38;5;220m";
+    pub const GREEN: &str = "\x1b[92m";
+    pub const BLUE: &str = "\x1b[38;5;38m";
+    pub const MAGENTA: &str = "\x1b[35m";
+    pub const GREY: &str = "\x1b[2;37m";
+    pub const DIM_WHITE: &str = "\x1b[90m";
+    pub const RESET: &str = "\x1b[0m";
+
+    pub(super) const BOLD: &str = "\x1b[1m";
+    pub(super) const RED_BOLD: &str = concat!("\x1b[1;", RED_COLOR_CODE, "m");
+}
 
 const QUOTES: [char; 2] = ['\'', '\"'];
 const QUOTE_LEN: usize = QUOTES[0].len_utf8();
@@ -87,15 +102,14 @@ impl Display for LineData {
         let (stylized_input, mismatched_quotes) = stylize_input(&self.input);
         write!(
             f,
-            "{}{} {stylized_input}",
-            self.prompt.as_str().bold(),
-            self.prompt_separator.as_str().bold().stylize().with(
-                if self.err || mismatched_quotes {
-                    Color::Red
-                } else {
-                    Color::White
-                }
-            )
+            "{BOLD}{}{}{}{RESET} {stylized_input}",
+            self.prompt.as_str(),
+            if self.err || mismatched_quotes {
+                RED_BOLD
+            } else {
+                ""
+            },
+            self.prompt_separator.as_str()
         )
     }
 }

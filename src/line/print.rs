@@ -1,6 +1,6 @@
-use crate::{
-    ansi_code::{RED, RESET},
-    line::{Repl, NEW_LINE},
+use crate::line::{
+    style::ansi_code::{RED, RESET},
+    {Repl, NEW_LINE},
 };
 
 use std::{
