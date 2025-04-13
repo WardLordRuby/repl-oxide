@@ -118,9 +118,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     ///
     /// [`build`]: crate::line::builder::ReplBuilder::build
     pub fn println<D: Display>(&mut self, print: D) -> io::Result<()> {
-        if !self.cursor_at_start {
-            self.prep_for_background_msg()?;
-        }
+        self.prep_for_background_msg()?;
         println(&mut self.term, print)
     }
 
@@ -137,9 +135,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     ///
     /// [`build`]: crate::line::builder::ReplBuilder::build
     pub fn eprintln<D: Display>(&mut self, print: D) -> io::Result<()> {
-        if !self.cursor_at_start {
-            self.prep_for_background_msg()?;
-        }
+        self.prep_for_background_msg()?;
         eprintln(&mut self.term, print, self.line.style_enabled)
     }
 
@@ -156,9 +152,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     ///
     /// [`build`]: crate::line::builder::ReplBuilder::build
     pub fn print_lines<S: AsRef<str>>(&mut self, str: S) -> io::Result<()> {
-        if !self.cursor_at_start {
-            self.prep_for_background_msg()?;
-        }
+        self.prep_for_background_msg()?;
         print_lines(&mut self.term, str)
     }
 
@@ -168,6 +162,9 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// [`Repl::render`] is called again will be cleared.
     #[inline(always)]
     pub fn prep_for_background_msg(&mut self) -> io::Result<()> {
+        if self.cursor_at_start {
+            return Ok(());
+        }
         execute!(self.term, BeginSynchronizedUpdate)?;
         self.term.queue(cursor::Hide)?;
         self.move_to_beginning(self.line_len())?;

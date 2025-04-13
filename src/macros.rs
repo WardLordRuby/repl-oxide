@@ -40,6 +40,7 @@ macro_rules! general_event_process {
             $crate::EventLoop::Break => break,
             $crate::EventLoop::AsyncCallback(callback) => {
                 if let Err(err) = callback($repl, $ctx).await {
+                    $repl.prep_for_background_msg()?;
                     tracing::error!("{err}");
                     if $repl.remove_current_hook_by_error($ctx, &err)? {
                         tracing::trace!("Input hook removed after async callback error")
