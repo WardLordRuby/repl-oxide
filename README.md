@@ -4,9 +4,15 @@
 
 # repl-oxide
 repl-oxide is a work-in-progress, async-first REPL (Read-Eval-Print Loop) library for Rust. Built over [crossterm] with seamless
-[clap] derive integration, this library focuses on providing effortless control over custom features. repl-oxide was originally
-created for [MatchWire][match_wire]. repl-oxide provides some unique features that allow for creating customized key event
-processors. See full feature list below.
+[clap] derive integration, this library focuses on providing effortless control over custom features. repl-oxide provides some
+unique features that allow for creating customized key event processors. See full feature list below.
+
+This library was originally developed for [MatchWire][match_wire], which required a REPL interface capable of handling both
+blocking commands and asynchronous background tasks that could still print messages cleanly. Additionally, the project needed a
+flexible interface for defining persistent "modes"—referred to as _input hooks_—allowing complete control over how input is 
+processed and how state is displayed. Since MatchWire runs on a single-threaded Tokio runtime, all of this had to function
+smoothly without relying on multithreading. Existing libraries also lacked smaller but important features, such as discarding
+buffered key inputs during blocking operations and the importing/exporting of user commands.
 
 ## Install
 Add repl-oxide as a dependency to your Cargo.toml with:
@@ -34,19 +40,21 @@ to refinement.
 </div>
 
 ### Current Features
-- Tab autocompletion: walk forward (⇥) and backward (⇧ + ⇥) through **valid** commands.
+- Tab autocompletion: walk forward <kbd>Tab</kbd> and backward <kbd>Shift</kbd> + <kbd>Tab</kbd> through **valid** commands.
 - Predictive ghost text: previews previous matching commands and then the most relevant autocompletion suggestion.
+- Ghost text completion: complete visible previous commands with the right arrow <kbd>→</kbd>.
+- Navigate previous commands with up and down arrows <kbd>↑</kbd>, <kbd>↓</kbd>.
 - Colored line styling (opt-out by default): highlights commands, arguments, quoted strings, and errors (e.g., mismatched quotes,
   missing requirements, invalid arguments, commands, or values). Inspired by PowerShell.
 - Customizable prompt and prompt separator.
-- Clear the current line with Ctrl+C.
-- Quit shortcut with Ctrl+D or Ctrl+C when the input line is empty.
-- Embed a custom quit command (e.g., triggered by Ctrl+D/Ctrl+C).
+- Buffered key inputs are discarded during a commands execution.
+- Clear the current line with <kbd>Ctrl</kbd> + <kbd>C</kbd>.
+- Quit shortcuts, <kbd>Ctrl</kbd> + <kbd>D</kbd> or <kbd>Ctrl</kbd> + <kbd>C</kbd> when the input line is empty.
+- Define a custom quit command (e.g., command triggered by <kbd>Ctrl</kbd> + <kbd>D</kbd> or <kbd>Ctrl</kbd> + <kbd>C</kbd>).
 - Import/Export command history.
-- Navigate previous commands with ↑ and ↓.
 - Dynamic input hooks with async support for precise control over input events.
-- Cross-platform support: compiles directly for Windows and Unix targets.
-- Multi-line command support and resize support.
+- Cross-platform support: works on all platforms that crossterm supports.
+- Multi-line command and resize support.
 
 ## Path to Release
 #### TODOs before a crates.io release
