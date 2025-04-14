@@ -1,6 +1,7 @@
 use crate::line::Repl;
 
 use std::{
+    cmp::Ordering,
     collections::{HashMap, HashSet},
     io::{self, Write},
     ops::Range,
@@ -311,7 +312,11 @@ impl From<&'static CommandScheme> for Completion {
             recs: Option<&'static [&'static str]>,
             at: usize,
         ) {
-            if let RecKind::Value(_) = kind {
+            if let RecKind::Value(ref r) = kind {
+                assert!(
+                    r.start > 0,
+                    "Values must have at least one required static input"
+                );
                 assert!(map
                     .insert(
                         at,
@@ -765,8 +770,16 @@ impl Completion {
     }
 
     /// expects `RecKind::Value`
+    #[inline]
     fn value_valid(&self, value: &str, i: usize) -> bool {
         self.value_sets.get(&i).expect("kind value").contains(value)
+    }
+
+    #[inline]
+    fn valid_rec_prefix(&self, str: &str) -> bool {
+        self.recommendations
+            .first()
+            .is_some_and(|next| next.strip_prefix(str).is_some())
     }
 
     fn try_parse_token_from_end(
@@ -942,7 +955,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         self.completion.input.ending.open_quote.as_ref()
     }
 
-    fn check_value_err(&self, user_input: &str) -> bool {
+    fn check_value_err(&self) -> bool {
         let list_i = [
             self.completion.indexer.list.0,
             self.completion.indexer.list.1,
@@ -951,6 +964,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             self.completion.rec_list[list_i[0]],
             self.completion.rec_list[list_i[1]],
         ];
+        let curr_token = self.curr_token();
         let input = self.line.input.trim_start();
         let (trailing, trailing_w_last) =
             self.completion.last_key().map_or((input, input), |key| {
@@ -962,33 +976,39 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         let mut errs = [false, false];
         for (i, err) in errs.iter_mut().enumerate() {
             *err = match recs[i].kind {
-                RecKind::Argument(required)
-                    if required > 0
-                        && required
-                            != self.completion.input.required_input_i.len()
-                                + !self.completion.input.ending.token.is_empty() as usize =>
-                {
-                    true
-                }
-                RecKind::Value(_) if user_input == HELP_ARG => false,
-                RecKind::Value(_) if !self.completion.value_valid(user_input, list_i[i]) => true,
-                RecKind::UserDefined(_) if trailing.is_empty() => true,
-                RecKind::UserDefined(ref r)
-                    if !r.contains(
-                        &self
+                RecKind::Command => !self.completion.valid_rec_prefix(curr_token),
+                RecKind::Argument(required) => {
+                    match required.cmp(
+                        &(self.completion.input.required_input_i.len()
+                            + !curr_token.is_empty() as usize),
+                    ) {
+                        Ordering::Greater => true,
+                        Ordering::Equal => false,
+                        Ordering::Less => !self
                             .completion
-                            .count_vals_in_slice(trailing_w_last, &RecKind::Null)
-                            .1,
-                    ) =>
-                {
-                    true
+                            .valid_rec_prefix(curr_token.trim_start_matches('-')),
+                    }
                 }
-                RecKind::Help | RecKind::Null if !trailing.is_empty() => true,
-                _ => false,
+                RecKind::Value(_) => {
+                    curr_token != HELP_ARG && !self.completion.value_valid(curr_token, list_i[i])
+                }
+                RecKind::UserDefined(ref r) => {
+                    trailing.is_empty()
+                        || !r.contains(
+                            &self
+                                .completion
+                                .count_vals_in_slice(trailing_w_last, &RecKind::Null)
+                                .1,
+                        )
+                }
+                RecKind::Help | RecKind::Null => !trailing.is_empty(),
             };
             if !self.completion.indexer.multiple {
                 return *err;
             }
+        }
+        if curr_token.starts_with('-') && matches!(recs[1].kind, RecKind::Argument(_)) {
+            return errs[1];
         }
         errs[0] && errs[1]
     }
@@ -998,7 +1018,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             self.completion.curr_command().is_some_and_invalid(),
             self.completion.curr_arg().is_some_and_invalid(),
             self.completion.curr_value().is_some_and_invalid(),
-            self.check_value_err(self.curr_token())
+            self.check_value_err()
         ));
     }
 
@@ -1011,31 +1031,27 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             .completion
             .count_vals_in_slice(line_trim_start, command_kind);
 
-        let take_end = if let Some(ref starting_token) = kind_match {
+        if let Some(ref starting_token) = kind_match {
             let start_token_meta = self.completion.rec_list[starting_token.hash_i];
 
             if starting_token.hash_i == INVALID || nvals == 0 {
                 return kind_match;
             }
 
-            match start_token_meta {
-                RecData {
-                    kind: RecKind::Value(ref r) | RecKind::UserDefined(ref r),
-                    end: false,
-                    ..
-                } => !r.contains(&nvals),
-                _ => true,
+            if let RecData {
+                kind: RecKind::Value(ref r) | RecKind::UserDefined(ref r),
+                end: false,
+                ..
+            } = start_token_meta
+            {
+                if r.contains(&nvals) {
+                    return None;
+                }
             }
-        } else {
-            true
-        };
+        }
 
-        take_end
-            .then(|| {
-                self.completion
-                    .try_parse_token_from_end(line_trim_start, command_kind, Some(nvals))
-            })
-            .flatten()
+        self.completion
+            .try_parse_token_from_end(line_trim_start, command_kind, Some(nvals))
     }
 
     /// Updates the suggestions for the current user input
@@ -1064,8 +1080,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         } = self.completion.rec_list[self.completion.indexer.list.0]
         {
             if !state_changed {
-                self.check_for_errors();
-                return;
+                return self.check_for_errors();
             }
         }
 
@@ -1129,8 +1144,9 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 kind_match.filter(|starting_token| {
                     !starting_token.exact_eq(self.completion.curr_command().expect("outer if"))
                         && match self.completion.rec_list[starting_token.hash_i].kind {
-                            RecKind::UserDefined(_) if nvals == 0 => true,
-                            RecKind::Value(ref c) if c.contains(&(nvals + 1)) => {
+                            RecKind::Value(ref c) | RecKind::UserDefined(ref c)
+                                if c.contains(&(nvals + 1)) =>
+                            {
                                 self.completion.indexer.multiple = nvals >= c.start;
                                 true
                             }
@@ -1203,31 +1219,29 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             let arg_recs = self.completion.rec_list[arg.hash_i];
 
             if last_key_trim.ends_with(char::is_whitespace) {
-                match arg_recs.kind {
-                    RecKind::Value(ref c) => {
-                        if let Some(token) = self.completion.try_parse_token_from_end(
-                            line_trim_start,
-                            &arg_recs.kind,
-                            None,
-                        ) {
-                            if token.hash_i != INVALID {
-                                let (kind_match, nvals) = self
-                                    .completion
-                                    .count_vals_in_slice(line_trim_start, command_kind);
-                                debug_assert!(kind_match.unwrap().exact_eq(arg));
-                                if c.contains(&(nvals + 1)) {
-                                    self.completion.indexer.multiple = true;
-                                } else {
-                                    self.completion.indexer.multiple = false;
-                                    self.completion.input.curr_argument = None;
-                                }
+                if let RecKind::Value(ref c) | RecKind::UserDefined(ref c) = arg_recs.kind {
+                    if let Some(token) = self.completion.try_parse_token_from_end(
+                        line_trim_start,
+                        &arg_recs.kind,
+                        None,
+                    ) {
+                        if matches!(arg_recs.kind, RecKind::UserDefined(_))
+                            || token.hash_i != INVALID
+                        {
+                            let (kind_match, nvals) = self
+                                .completion
+                                .count_vals_in_slice(line_trim_start, command_kind);
+                            debug_assert!(kind_match.unwrap().exact_eq(arg));
+                            if c.contains(&(nvals + 1)) {
+                                self.completion.indexer.multiple = true;
                             } else {
-                                self.completion.input.curr_value = Some(token);
+                                self.completion.indexer.multiple = false;
+                                self.completion.input.curr_argument = None;
                             }
-                        };
+                        } else {
+                            self.completion.input.curr_value = Some(token);
+                        }
                     }
-                    RecKind::UserDefined(_) => self.completion.input.curr_argument = None,
-                    _ => (),
                 }
             } else {
                 // make sure we set multiple to false when backspacing
@@ -1278,8 +1292,6 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         let rec_data_1 = self.completion.rec_list[self.completion.indexer.list.0];
         let rec_data_2 = self.completion.rec_list[self.completion.indexer.list.1];
 
-        self.check_for_errors();
-
         if self.curr_token().is_empty() {
             if let Some(recs) = rec_data_1.recs {
                 self.completion.recommendations = recs[..rec_data_1.unique_rec_end()].to_vec();
@@ -1305,7 +1317,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             if add_help {
                 self.completion.recommendations.push(HELP_STR);
             }
-            return;
+            return self.check_for_errors();
         }
 
         let input_lower = self.curr_token().trim_start_matches('-').to_lowercase();
@@ -1349,6 +1361,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         }
 
         self.completion.recommendations = recommendations;
+        self.check_for_errors();
     }
 
     /// Changes the current user input to either `Next` or `Previous` suggestion depending on the given direction
@@ -1444,14 +1457,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 .expect("guard clause covers `UserInput` and `Null`"),
         );
 
-        self.line.found_err(
-            self.check_value_err(
-                new_line
-                    .rsplit_once(char::is_whitespace)
-                    .map_or(&new_line, |(_, suf)| suf),
-            ),
-        );
-
+        self.line.err = false;
         self.change_line_raw(new_line)?;
         Ok(())
     }
