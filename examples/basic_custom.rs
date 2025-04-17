@@ -2,23 +2,15 @@
 /*                   cargo r --example basic-custom --features="macros"                   */
 
 use repl_oxide::{
-    ansi_code::{RED, RESET},
     clap::try_parse_from,
     executor::{CommandHandle, Executor},
     general_event_process, repl_builder, Repl, StreamExt,
 };
 
-use std::{
-    fmt::Display,
-    io::{self, Stdout},
-    sync::Arc,
-};
+use std::io::{self, Stdout};
 
 use clap::Parser;
-use tokio::{
-    sync::Notify,
-    time::{sleep, Duration},
-};
+use tokio::time::{interval, Duration};
 
 #[derive(Parser)]
 #[command(
@@ -52,29 +44,8 @@ impl Executor<Stdout> for CommandContext {
     }
 }
 
-// Our message type to send to the repl If we need to display text to the user outside of
-// the `CommandContext` scope
-struct ErrorMsg<T: Display>(T);
-
-// We must impl `Display` for our `Message` type so the repl knows how to display the text
-// Note the repl loop will take care of appending a new line character
-impl<T: Display> Display for ErrorMsg<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{RED}{}{RESET}", self.0)
-    }
-}
-
-fn save_cache_every(period: Duration, notify: Arc<Notify>) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        loop {
-            sleep(period).await;
-            notify.notify_one();
-        }
-    })
-}
-
-fn save_cache() -> Result<(), ErrorMsg<&'static str>> {
-    Err(ErrorMsg("Failed to save cache"))
+fn save_cache() -> Result<(), &'static str> {
+    Err("Failed to save cache")
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -90,11 +61,8 @@ async fn main() -> io::Result<()> {
         .build()
         .expect("input writer accepts crossterm commands");
 
-    // Create a notifier to tell our repl when the cache should be updated
-    let cache_updater = Arc::new(Notify::const_new());
-
-    // Spawn example save cache event
-    let timer_loop = save_cache_every(Duration::from_secs(10), Arc::clone(&cache_updater));
+    // Create a interval to schedule when a background event should happen
+    let mut cache_updater = interval(Duration::from_secs(10));
 
     loop {
         // Disregard key inputs while user commands are being processed
@@ -114,16 +82,13 @@ async fn main() -> io::Result<()> {
             }
 
             // Writing your own loop allows for awaiting custom events
-            _ = cache_updater.notified() => {
+            _ = cache_updater.tick() => {
                 if let Err(err) = save_cache() {
-                    repl.println(err)?;
+                    repl.eprintln(err)?;
                 }
             }
         }
     }
-
-    // Stop timer loop
-    timer_loop.abort();
 
     Ok(())
 }
