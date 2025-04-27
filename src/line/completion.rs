@@ -131,7 +131,7 @@ impl InnerScheme {
     /// Most of the time you will want to set `parent` after. See: [`Self::with_parent`]
     pub const fn flag() -> Self {
         Self {
-            data: RecData::new(RecKind::Null).without_help(),
+            data: RecData::new(RecKind::ArgFlag).without_help(),
             inner: None,
         }
     }
@@ -240,7 +240,7 @@ impl RecData {
         let len = self.rec_len();
         self.alias
             .as_ref()
-            .map_or(len, |&short_mapping| len - short_mapping.len())
+            .map_or(len, |alias_mapping| len - alias_mapping.len())
     }
 }
 
@@ -248,6 +248,7 @@ impl RecData {
 pub enum RecKind {
     Command,
     Argument(usize),
+    ArgFlag,
     Value(Range<usize>),
     UserDefined(Range<usize>),
     Help,
@@ -939,7 +940,7 @@ impl Completion {
             RecKind::Argument(_) => Some(true),
             RecKind::Value(_) | RecKind::Command => Some(false),
             RecKind::Help => Some(self.curr_command().is_some()),
-            RecKind::UserDefined(_) | RecKind::Null => None,
+            RecKind::UserDefined(_) | RecKind::ArgFlag | RecKind::Null => None,
         }
     }
 
@@ -1010,6 +1011,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                         )
                 }
                 RecKind::Help | RecKind::Null => !trailing.is_empty(),
+                RecKind::ArgFlag => recs[i].end && !trailing.is_empty(),
             };
             if !self.completion.indexer.multiple {
                 return *err;
@@ -1047,7 +1049,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             }
 
             if let RecData {
-                kind: RecKind::Value(ref r) | RecKind::UserDefined(ref r),
+                kind: RecKind::Value(r) | RecKind::UserDefined(r),
                 end: false,
                 ..
             } = start_token_meta
@@ -1120,33 +1122,27 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 });
         }
 
-        // not proud of this kind of inner block guard, arguably this is a good indicator these blocks should be moved to their own functions
-        let mut last_key_trim = "";
+        if let Some((cmd_kind, cmd_suf)) = self.completion.curr_command().and_then(|cmd| {
+            if self.open_quote().is_some()
+                || self.completion.curr_value().is_some()
+                || (self.completion.curr_arg().is_some() && !multiple_switch_kind)
+            {
+                return None;
+            }
 
-        if self.open_quote().is_none()
-            && self.completion.curr_value().is_none()
-            && (self.completion.curr_arg().is_none() || multiple_switch_kind)
-            && self.completion.curr_command().is_some_and(|cmd| {
-                matches!(
-                    self.completion.rec_list[cmd.hash_i].kind,
-                    RecKind::Argument(_) | RecKind::Value(_)
-                ) && {
-                    last_key_trim = line_trim_start[cmd.slice_len..].trim_start();
-                    !last_key_trim.is_empty()
-                }
-            })
-        {
-            let command_kind = &self.completion.rec_list
-                [self.completion.curr_command().expect("outer if").hash_i]
-                .kind;
-
-            let mut new = if last_key_trim.ends_with(char::is_whitespace) {
-                self.try_get_forward_arg_or_val(line_trim_start, command_kind)
+            let command_kind = &self.completion.rec_list[cmd.hash_i].kind;
+            let cmd_suf = line_trim_start[cmd.slice_len..].trim_start();
+            (matches!(command_kind, RecKind::Argument(_) | RecKind::Value(_))
+                && !cmd_suf.is_empty())
+            .then_some((command_kind, cmd_suf))
+        }) {
+            let mut new = if cmd_suf.ends_with(char::is_whitespace) {
+                self.try_get_forward_arg_or_val(line_trim_start, cmd_kind)
             } else {
                 // make sure we set prev arg when backspacing
                 let (kind_match, nvals) = self.completion.count_vals_in_slice(
                     &line_trim_start[..line_trim_start.len() - self.curr_token().len()],
-                    command_kind,
+                    cmd_kind,
                 );
 
                 kind_match.filter(|starting_token| {
@@ -1173,7 +1169,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                         &RecKind::Argument(0)
                     })
                 })
-                .unwrap_or(command_kind);
+                .unwrap_or(cmd_kind);
 
             match kind {
                 &RecKind::Argument(required) => {
@@ -1196,49 +1192,43 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             }
         }
 
-        if let Some(arg) = self.completion.curr_arg() {
-            if let RecData {
-                recs: None,
-                kind: RecKind::Null,
-                end: false,
-                ..
-            } = self.completion.rec_list[arg.hash_i]
-            {
-                // boolean flag found, ok to move on
+        if let Some(end) = self.completion.curr_arg().and_then(|arg| {
+            let rec_data = self.completion.rec_list[arg.hash_i];
+            (rec_data.kind == RecKind::ArgFlag).then_some(rec_data.end)
+        }) {
+            // boolean flag found, ok to move on
+            if !end {
                 self.completion.input.curr_argument = None;
             }
-        }
-
-        if self.completion.curr_value().is_none()
-            && self.open_quote().is_none()
-            && self.completion.curr_command().is_some_and_valid()
-            && self.completion.curr_arg().is_some_and(|arg| {
-                arg.hash_i != INVALID && {
-                    last_key_trim = line_trim_start[arg.byte_start + arg.slice_len..].trim_start();
-                    !last_key_trim.is_empty()
+        } else if let Some((cmd_kind, arg, arg_suf)) =
+            self.completion.curr_command().and_then(|cmd| {
+                if cmd.hash_i == INVALID
+                    || self.completion.curr_value().is_some()
+                    || self.open_quote().is_some()
+                {
+                    return None;
                 }
+
+                self.completion.curr_arg().and_then(|arg| {
+                    let cmd_kind = &self.completion.rec_list[cmd.hash_i].kind;
+                    let arg_suf = line_trim_start[arg.byte_start + arg.slice_len..].trim_start();
+                    (arg.hash_i != INVALID && !arg_suf.is_empty())
+                        .then_some((cmd_kind, arg, arg_suf))
+                })
             })
         {
-            let command_kind = &self.completion.rec_list
-                [self.completion.curr_command().expect("outer if").hash_i]
-                .kind;
+            let arg_kind = &self.completion.rec_list[arg.hash_i].kind;
 
-            let arg = self.completion.curr_arg().expect("outer if");
-            let arg_recs = self.completion.rec_list[arg.hash_i];
-
-            if last_key_trim.ends_with(char::is_whitespace) {
-                if let RecKind::Value(ref c) | RecKind::UserDefined(ref c) = arg_recs.kind {
-                    if let Some(token) = self.completion.try_parse_token_from_end(
-                        line_trim_start,
-                        &arg_recs.kind,
-                        None,
-                    ) {
-                        if matches!(arg_recs.kind, RecKind::UserDefined(_))
-                            || token.hash_i != INVALID
-                        {
+            if arg_suf.ends_with(char::is_whitespace) {
+                if let RecKind::Value(c) | RecKind::UserDefined(c) = arg_kind {
+                    if let Some(token) =
+                        self.completion
+                            .try_parse_token_from_end(line_trim_start, arg_kind, None)
+                    {
+                        if matches!(arg_kind, RecKind::UserDefined(_)) || token.hash_i != INVALID {
                             let (kind_match, nvals) = self
                                 .completion
-                                .count_vals_in_slice(line_trim_start, command_kind);
+                                .count_vals_in_slice(line_trim_start, cmd_kind);
                             debug_assert!(kind_match.unwrap().exact_eq(arg));
                             if c.contains(&(nvals + 1)) {
                                 self.completion.indexer.multiple = true;
@@ -1255,7 +1245,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 // make sure we set multiple to false when backspacing
                 if let (Some(kind_match), nvals) = self.completion.count_vals_in_slice(
                     &line_trim_start[..line_trim_start.len() - self.curr_token().len()],
-                    command_kind,
+                    cmd_kind,
                 ) {
                     if let RecKind::Value(ref c) = self.completion.rec_list[kind_match.hash_i].kind
                     {
@@ -1376,7 +1366,8 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     pub fn try_completion(&mut self, direction: Direction) -> io::Result<()> {
         if !self.line.comp_enabled
             || self.completion.recommendations.is_empty()
-            || self.completion.recommendations.len() == 1
+            || self.completion.last_key().is_some_and_invalid()
+            || (self.completion.recommendations.len() == 1
                 && match self.completion.rec_data_from_index(0).kind {
                     RecKind::Value(_) => {
                         self.curr_token() == self.completion.recommendations[0]
@@ -1387,7 +1378,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                         .strip_prefix("--")
                         .is_some_and(|user_input| user_input == self.completion.recommendations[0]),
                     _ => self.curr_token() == self.completion.recommendations[0],
-                }
+                })
         {
             self.set_uneventful();
             return Ok(());
@@ -1465,7 +1456,12 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 .expect("guard clause covers `UserInput` and `Null`"),
         );
 
-        self.line.err = false;
+        self.line.err = if self.completion.indexer.recs == USER_INPUT {
+            self.check_value_err()
+        } else {
+            false
+        };
+
         self.change_line_raw(new_line)?;
         Ok(())
     }
