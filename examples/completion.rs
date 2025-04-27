@@ -62,119 +62,69 @@ enum CaseOptions {
     Upper,
 }
 
-const COMPLETION: CommandScheme = init_command_scheme();
-
-const fn init_command_scheme() -> CommandScheme {
-    CommandScheme::new(
-        RecData::command_set(
-            // Specify our command alias map
-            Some(&COMMANDS_ALIAS),
-            // Specify our commands to recommend
-            Some(&COMMAND_RECS),
-            // Describe that commands is not an end node
-            false,
-        ),
-        &COMMAND_INNER,
-    )
-}
+const COMPLETION: &CommandScheme = &init_command_scheme();
 
 // Array of our commands followed by their aliases
 // Note: any alias must follow the last command
 const COMMAND_RECS: [&str; 4] = ["echo", "roll", "quit", "exit"];
 
-// Mapping of our command to it's aliases (eg. "quit" index -> "exit" index)
-const COMMANDS_ALIAS: [(usize, usize); 1] = [(2, 3)];
-
-// Array of our recommendations for our "echo" command. Any aliases would follow as they did in `COMMAND_RECS`
-const ECHO_RECS: [&str; 2] = ["case", "reverse"];
-
-// Mapping of our echo arguments to their short counter part
-const ECHO_SHORT: [(usize, &str); 2] = [(0, "c"), (1, "r")];
-
-// Array of our recommendations for our `CaseOptions`
-const ECHO_CASE_RECS: [&str; 2] = ["lower", "upper"];
-
-const ROLL_RECS: [&str; 1] = ["sides"];
-const ROLL_SHORT: [(usize, &str); 1] = [(0, "s")];
+const fn init_command_scheme() -> CommandScheme {
+    CommandScheme::new(
+        RecData::new(RecKind::Command)
+            .with_recommendations(&COMMAND_RECS)
+            // Mapping of our command to it's aliases (eg. "quit" index -> "exit" index)
+            .with_alias(&[(2, 3)]),
+        COMMAND_INNER,
+    )
+}
 
 // All command recommendations must have `ROOT` set as their parent
-const COMMAND_INNER: [InnerScheme; 3] = [
+const COMMAND_INNER: &[InnerScheme; 3] = &[
     // echo
     InnerScheme::new(
-        RecData::new(
-            Parent::Root,
-            // `ECHO_RECS` has no aliased names
-            None,
-            // Link to `ECHO_RECS` short counter parts
-            Some(&ECHO_SHORT),
-            // Specify the "echo" commands recommendations
-            Some(&ECHO_RECS),
-            // Describe the recommendation kind as arguments where "echo" has one required input
-            RecKind::argument_with_required_user_defined(1),
-            // List as not the end of the recommendation tree
-            false,
-        ),
+        // Describe the recommendation kind as arguments where "echo" has one required input
+        RecData::new(RecKind::argument_with_required_user_defined(1))
+            .with_parent(Parent::Root)
+            .with_recommendations(&["case", "reverse"])
+            // Mapping of our echo arguments to their short counter part
+            .with_short(&[(0, "c"), (1, "r")]),
         // Link to interior recommendation for the "echo" command
-        Some(&ECHO_INNER),
+        Some(ECHO_INNER),
     ),
     // roll
     InnerScheme::new(
-        RecData::new(
-            Parent::Root,
-            // `ROLL_RECS` has no aliased names
-            None,
-            // Link to `ROLL_RECS` short counter parts
-            Some(&ROLL_SHORT),
-            // Specify the "roll" commands recommendations
-            Some(&ROLL_RECS),
-            // Describe the recommendation kind as arguments where "roll" has no required inputs
-            RecKind::argument_with_no_required_inputs(),
-            // List as not the end of the recommendation tree
-            false,
-        ),
+        // Describe the recommendation kind as arguments where "roll" has no required inputs
+        RecData::new(RecKind::argument_with_no_required_inputs())
+            .with_parent(Parent::Root)
+            .with_recommendations(&["sides"])
+            .with_short(&[(0, "s")]),
         // Link to interior recommendation for the "roll" command
-        Some(&ROLL_INNER),
+        Some(ROLL_INNER),
     ),
     // quit
     // Describe "quit" as an end node
     InnerScheme::end(Parent::Root),
 ];
 
-const ECHO_INNER: [InnerScheme; 2] = [
+const ECHO_INNER: &[InnerScheme; 2] = &[
     // case
     InnerScheme::new(
-        RecData::new(
-            // Link to the parent command "echo"
-            Parent::Entry(COMMAND_RECS[0]),
-            // `ECHO_CASE_RECS` has no aliased names
-            None,
-            // `ECHO_CASE_RECS` has no short counter parts
-            None,
-            // Specify the "case" argument recommendation
-            Some(&ECHO_CASE_RECS),
-            // Describe the recommendation kind as `value` (set enum) with max input of 1
-            RecKind::value_with_num_args(1),
-            // List as not the end of the recommendation tree
-            false,
-        ),
+        // Describe the recommendation kind as `value` (set enum) with max input of 1
+        RecData::new(RecKind::value_with_num_args(1))
+            .with_parent(Parent::Entry(COMMAND_RECS[0]))
+            .with_recommendations(&["lower", "upper"]),
         None,
     ),
     // reverse
     // List the reverse command as a flag and is also not the end of the recommendation tree
     // since it doesn't matter the position of any 3 "echo" arguments
-    InnerScheme::flag(Parent::Entry(COMMAND_RECS[0]), false),
+    InnerScheme::flag().with_parent(Parent::Entry(COMMAND_RECS[0])),
 ];
 
-const ROLL_INNER: [InnerScheme; 1] = [
+const ROLL_INNER: &[InnerScheme; 1] = &[
     // sides
-    InnerScheme::empty_with(
-        // Link to the parent command "roll"
-        Parent::Entry(COMMAND_RECS[1]),
-        // Describe the recommendation kind as `UserDefined` with max input of 1
-        RecKind::user_defined_with_num_args(1),
-        // List as not the end of the recommendation tree
-        false,
-    ),
+    // Set max user defined input of 1 and link to the parent command "roll"
+    InnerScheme::user_defined(1).with_parent(Parent::Entry(COMMAND_RECS[1])),
 ];
 
 // Our context can store all default/persistent state
@@ -254,7 +204,7 @@ async fn main() -> io::Result<()> {
 
     // Build and run a new repl with our const `CommandScheme` structure
     repl_builder(io::stdout())
-        .with_completion(&COMPLETION)
+        .with_completion(COMPLETION)
         .build()
         .expect("input writer accepts crossterm commands")
         .run(&mut CommandContext::default())

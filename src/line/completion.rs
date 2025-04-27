@@ -100,6 +100,8 @@ pub struct RecData {
     pub(super) kind: RecKind,
     /// Signals this is a leaf node
     end: bool,
+    /// Used to validate help arguments
+    has_help: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -111,7 +113,7 @@ pub enum Parent {
 
 impl CommandScheme {
     pub const fn new(commands: RecData, inner: &'static [InnerScheme]) -> Self {
-        CommandScheme {
+        Self {
             commands,
             invalid: RecData::empty(),
             valid: RecData::empty(),
@@ -123,86 +125,58 @@ impl CommandScheme {
 
 impl InnerScheme {
     pub const fn new(data: RecData, inner: Option<&'static [Self]>) -> Self {
-        InnerScheme { data, inner }
+        Self { data, inner }
     }
 
-    pub const fn flag(parent: Parent, end: bool) -> Self {
-        InnerScheme {
-            data: RecData {
-                parent: Some(parent),
-                alias: None,
-                short: None,
-                recs: None,
-                kind: RecKind::Null,
-                end,
-            },
+    /// Most of the time you will want to set `parent` after. See: [`Self::with_parent`]
+    pub const fn flag() -> Self {
+        Self {
+            data: RecData::new(RecKind::Null).without_help(),
             inner: None,
         }
     }
 
-    pub const fn empty_with(parent: Parent, kind: RecKind, end: bool) -> Self {
-        InnerScheme {
-            data: RecData {
-                parent: Some(parent),
-                alias: None,
-                short: None,
-                recs: None,
-                kind,
-                end,
-            },
+    /// Minimum of 1 arg is assumed  
+    /// Most of the time you will want to set `parent` after. See: [`Self::with_parent`]
+    pub const fn user_defined(max_args: usize) -> Self {
+        Self {
+            data: RecData::new(RecKind::user_defined_with_num_args(max_args)).without_help(),
             inner: None,
         }
     }
 
     pub const fn end(parent: Parent) -> Self {
-        InnerScheme {
-            data: RecData {
-                parent: Some(parent),
-                alias: None,
-                short: None,
-                recs: None,
-                kind: RecKind::Null,
-                end: true,
-            },
+        Self {
+            data: RecData::empty().with_parent(parent),
             inner: None,
         }
+    }
+
+    pub const fn with_parent(mut self, parent: Parent) -> Self {
+        self.data = self.data.with_parent(parent);
+        self
+    }
+
+    pub const fn set_end(mut self) -> Self {
+        self.data = self.data.set_end();
+        self
     }
 }
 
 impl RecData {
-    pub const fn new(
-        parent: Parent,
-        alias: Option<&'static [(usize, usize)]>,
-        short: Option<&'static [(usize, &'static str)]>,
-        recs: Option<&'static [&'static str]>,
-        kind: RecKind,
-        end: bool,
-    ) -> Self {
-        Self {
-            parent: Some(parent),
-            alias,
-            short,
-            recs,
-            kind,
-            end,
-        }
-    }
-
-    pub const fn command_set(
-        alias: Option<&'static [(usize, usize)]>,
-        recs: Option<&'static [&'static str]>,
-        end: bool,
-    ) -> Self {
+    pub const fn new(kind: RecKind) -> Self {
         Self {
             parent: None,
-            alias,
+            alias: None,
             short: None,
-            recs,
-            kind: RecKind::Command,
-            end,
+            recs: None,
+            kind,
+            end: false,
+            has_help: true,
         }
     }
 
+    /// Setting a help recommendation and modifying it will result in undefined behavior
     pub const fn help() -> Self {
         Self {
             parent: Some(Parent::Universal),
@@ -211,6 +185,7 @@ impl RecData {
             recs: None,
             kind: RecKind::Help,
             end: true,
+            has_help: false,
         }
     }
 
@@ -222,7 +197,38 @@ impl RecData {
             recs: None,
             kind: RecKind::Null,
             end: true,
+            has_help: false,
         }
+    }
+
+    pub const fn with_parent(mut self, parent: Parent) -> Self {
+        self.parent = Some(parent);
+        self
+    }
+
+    pub const fn with_alias(mut self, alias: &'static [(usize, usize)]) -> Self {
+        self.alias = Some(alias);
+        self
+    }
+
+    pub const fn with_short(mut self, short: &'static [(usize, &'static str)]) -> Self {
+        self.short = Some(short);
+        self
+    }
+
+    pub const fn with_recommendations(mut self, recs: &'static [&'static str]) -> Self {
+        self.recs = Some(recs);
+        self
+    }
+
+    pub const fn set_end(mut self) -> Self {
+        self.end = true;
+        self
+    }
+
+    pub const fn without_help(mut self) -> Self {
+        self.has_help = false;
+        self
     }
 
     #[inline]
@@ -258,16 +264,18 @@ impl RecKind {
     pub const fn argument_with_required_user_defined(required: usize) -> Self {
         Self::Argument(required)
     }
+
     /// Minimum of 1 arg is assumed
-    pub const fn user_defined_with_num_args(max: usize) -> Self {
-        Self::UserDefined(Range {
+    pub const fn value_with_num_args(max: usize) -> Self {
+        Self::Value(Range {
             start: 1,
             end: max.saturating_add(1),
         })
     }
+
     /// Minimum of 1 arg is assumed
-    pub const fn value_with_num_args(max: usize) -> Self {
-        Self::Value(Range {
+    const fn user_defined_with_num_args(max: usize) -> Self {
+        Self::UserDefined(Range {
             start: 1,
             end: max.saturating_add(1),
         })
