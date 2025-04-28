@@ -140,12 +140,21 @@ impl InnerScheme {
     }
 
     /// **Note**: parsing rules are **only** valid when kind is `RecKind::UserDefined`  
-    /// Function should return `true` if it is not valid
+    /// Function should return `true` if `&str` is _not_ valid
     pub const fn with_parsing_rule(mut self, f: fn(&str) -> bool) -> Self {
-        let RecKind::UserDefined { parse_fn, .. } = &mut self.data.kind else {
-            panic!("Tried to add a parse rule to an unsupported `RecKind`")
+        self.data.kind = match self.data.kind {
+            RecKind::UserDefined {
+                range,
+                parse_fn: prev,
+            } => {
+                assert!(prev.is_none(), "Only one parse rule is supported");
+                RecKind::UserDefined {
+                    range,
+                    parse_fn: Some(f),
+                }
+            }
+            _ => panic!("Tried to add a parse rule to an unsupported `RecKind`"),
         };
-        *parse_fn = Some(f);
         self
     }
 
