@@ -117,11 +117,6 @@ impl LineData {
         // The '+ 1' is accounting for the space character located in our impl `Display` for `Self`
         strip_ansi(prompt).chars().count() as u16 + strip_ansi(separator).chars().count() as u16 + 1
     }
-
-    #[inline]
-    fn found_err(&mut self, found: bool) {
-        self.err = found
-    }
 }
 
 #[derive(Clone, Copy)]

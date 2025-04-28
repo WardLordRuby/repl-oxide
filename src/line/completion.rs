@@ -22,12 +22,6 @@ const INVALID: usize = 1;
 const VALID: usize = 2;
 const HELP: usize = 3;
 
-macro_rules! any_true {
-    ($($x:expr),+ $(,)?) => {
-        $($x)||+
-    };
-}
-
 // MARK: IMPROVE
 // we could solve name-space collisions by making the data structure into a prefix-tree
 // this gets increasingly problematic to continue to support short arg syntax
@@ -131,7 +125,7 @@ impl InnerScheme {
     /// Most of the time you will want to set `parent` after. See: [`Self::with_parent`]
     pub const fn flag() -> Self {
         Self {
-            data: RecData::new(RecKind::ArgFlag).without_help(),
+            data: RecData::new(RecKind::ArgFlag),
             inner: None,
         }
     }
@@ -140,9 +134,19 @@ impl InnerScheme {
     /// Most of the time you will want to set `parent` after. See: [`Self::with_parent`]
     pub const fn user_defined(max_args: usize) -> Self {
         Self {
-            data: RecData::new(RecKind::user_defined_with_num_args(max_args)).without_help(),
+            data: RecData::new(RecKind::user_defined_with_num_args(max_args)),
             inner: None,
         }
+    }
+
+    /// **Note**: parsing rules are **only** valid when kind is `RecKind::UserDefined`  
+    /// Function should return `true` if it is not valid
+    pub const fn with_parsing_rule(mut self, f: fn(&str) -> bool) -> Self {
+        let RecKind::UserDefined { parse_fn, .. } = &mut self.data.kind else {
+            panic!("Tried to add a parse rule to an unsupported `RecKind`")
+        };
+        *parse_fn = Some(f);
+        self
     }
 
     pub const fn end(parent: Parent) -> Self {
@@ -153,12 +157,17 @@ impl InnerScheme {
     }
 
     pub const fn with_parent(mut self, parent: Parent) -> Self {
-        self.data = self.data.with_parent(parent);
+        self.data.parent = Some(parent);
+        self
+    }
+
+    pub const fn without_help(mut self) -> Self {
+        self.data.has_help = false;
         self
     }
 
     pub const fn set_end(mut self) -> Self {
-        self.data = self.data.set_end();
+        self.data.end = true;
         self
     }
 }
@@ -250,7 +259,10 @@ pub enum RecKind {
     Argument(usize),
     ArgFlag,
     Value(Range<usize>),
-    UserDefined(Range<usize>),
+    UserDefined {
+        range: Range<usize>,
+        parse_fn: Option<fn(&str) -> bool>,
+    },
     Help,
     Null,
 }
@@ -276,10 +288,13 @@ impl RecKind {
 
     /// Minimum of 1 arg is assumed
     const fn user_defined_with_num_args(max: usize) -> Self {
-        Self::UserDefined(Range {
-            start: 1,
-            end: max.saturating_add(1),
-        })
+        Self::UserDefined {
+            range: Range {
+                start: 1,
+                end: max.saturating_add(1),
+            },
+            parse_fn: None,
+        }
     }
 }
 
@@ -715,8 +730,15 @@ impl SliceData {
         match expected {
             RecKind::Command => completion.hash_command_unchecked(line, &mut data),
             RecKind::Argument(_) => completion.hash_arg_unchecked(line, &mut data),
-            RecKind::Value(ref r) => {
-                completion.hash_value_unchecked(line, &mut data, r, arg_count.unwrap_or(1))
+            RecKind::Value(range) => {
+                completion.hash_value_unchecked(line, &mut data, range, arg_count.unwrap_or(1))
+            }
+            RecKind::UserDefined { range, parse_fn } => {
+                if range.contains(&arg_count.unwrap_or(1))
+                    && parse_fn.map_or(true, |parse_err| !parse_err(data.to_slice_unchecked(line)))
+                {
+                    data.hash_i = VALID
+                }
             }
             _ => (),
         }
@@ -940,7 +962,7 @@ impl Completion {
             RecKind::Argument(_) => Some(true),
             RecKind::Value(_) | RecKind::Command => Some(false),
             RecKind::Help => Some(self.curr_command().is_some()),
-            RecKind::UserDefined(_) | RecKind::ArgFlag | RecKind::Null => None,
+            RecKind::UserDefined { .. } | RecKind::ArgFlag | RecKind::Null => None,
         }
     }
 
@@ -975,17 +997,16 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         ];
         let curr_token = self.curr_token();
         let input = self.line.input.trim_start();
-        let (trailing, trailing_w_last) =
-            self.completion.last_key().map_or((input, input), |key| {
-                (
-                    input[key.byte_start + key.slice_len..].trim(),
-                    &input[key.byte_start..],
-                )
-            });
+        let trailing = self
+            .completion
+            .last_key()
+            .map_or(input, |key| input[key.byte_start + key.slice_len..].trim());
         let mut errs = [false, false];
         for (i, err) in errs.iter_mut().enumerate() {
             *err = match recs[i].kind {
-                RecKind::Command => !self.completion.valid_rec_prefix(curr_token),
+                RecKind::Command | RecKind::Value(_) => {
+                    !self.completion.valid_rec_prefix(curr_token)
+                }
                 RecKind::Argument(required) => {
                     match required.cmp(
                         &(self.completion.input.required_input_i.len()
@@ -998,20 +1019,12 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                             .valid_rec_prefix(curr_token.trim_start_matches('-')),
                     }
                 }
-                RecKind::Value(_) => {
-                    curr_token != HELP_ARG && !self.completion.value_valid(curr_token, list_i[i])
+                // other `Value` and `UserDefined` errors do not need to be checked since `update_completion`
+                // will set `curr_value` to an invalid instance returning the error condition prior this fn call
+                RecKind::UserDefined { parse_fn, .. } => {
+                    trailing.is_empty() || parse_fn.is_some_and(|parse_err| parse_err(curr_token))
                 }
-                RecKind::UserDefined(ref r) => {
-                    trailing.is_empty()
-                        || !r.contains(
-                            &self
-                                .completion
-                                .count_vals_in_slice(trailing_w_last, &RecKind::Null)
-                                .1,
-                        )
-                }
-                RecKind::Help | RecKind::Null => !trailing.is_empty(),
-                RecKind::ArgFlag => recs[i].end && !trailing.is_empty(),
+                RecKind::ArgFlag | RecKind::Help | RecKind::Null => !trailing.is_empty(),
             };
             if !self.completion.indexer.multiple {
                 return *err;
@@ -1024,12 +1037,10 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     }
 
     fn check_for_errors(&mut self) {
-        self.line.found_err(any_true!(
-            self.completion.curr_command().is_some_and_invalid(),
-            self.completion.curr_arg().is_some_and_invalid(),
-            self.completion.curr_value().is_some_and_invalid(),
-            self.check_value_err()
-        ));
+        self.line.err = self.completion.curr_command().is_some_and_invalid()
+            || self.completion.curr_arg().is_some_and_invalid()
+            || self.completion.curr_value().is_some_and_invalid()
+            || self.check_value_err()
     }
 
     fn try_get_forward_arg_or_val(
@@ -1049,12 +1060,12 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             }
 
             if let RecData {
-                kind: RecKind::Value(r) | RecKind::UserDefined(r),
+                kind: RecKind::Value(range) | RecKind::UserDefined { range, .. },
                 end: false,
                 ..
             } = start_token_meta
             {
-                if r.contains(&nvals) {
+                if range.contains(&nvals) {
                     return None;
                 }
             }
@@ -1147,11 +1158,11 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
 
                 kind_match.filter(|starting_token| {
                     !starting_token.exact_eq(self.completion.curr_command().expect("outer if"))
-                        && match self.completion.rec_list[starting_token.hash_i].kind {
-                            RecKind::Value(ref c) | RecKind::UserDefined(ref c)
-                                if c.contains(&(nvals + 1)) =>
+                        && match &self.completion.rec_list[starting_token.hash_i].kind {
+                            RecKind::Value(range) | RecKind::UserDefined { range, .. }
+                                if range.contains(&(nvals + 1)) =>
                             {
-                                self.completion.indexer.multiple = nvals >= c.start;
+                                self.completion.indexer.multiple = nvals >= range.start;
                                 true
                             }
                             _ => self.completion.rec_list[starting_token.hash_i].end,
@@ -1220,17 +1231,17 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             let arg_kind = &self.completion.rec_list[arg.hash_i].kind;
 
             if arg_suf.ends_with(char::is_whitespace) {
-                if let RecKind::Value(c) | RecKind::UserDefined(c) = arg_kind {
+                if let RecKind::Value(range) | RecKind::UserDefined { range, .. } = arg_kind {
                     if let Some(token) =
                         self.completion
                             .try_parse_token_from_end(line_trim_start, arg_kind, None)
                     {
-                        if matches!(arg_kind, RecKind::UserDefined(_)) || token.hash_i != INVALID {
+                        if token.hash_i != INVALID {
                             let (kind_match, nvals) = self
                                 .completion
                                 .count_vals_in_slice(line_trim_start, cmd_kind);
                             debug_assert!(kind_match.unwrap().exact_eq(arg));
-                            if c.contains(&(nvals + 1)) {
+                            if range.contains(&(nvals + 1)) {
                                 self.completion.indexer.multiple = true;
                             } else {
                                 self.completion.indexer.multiple = false;
@@ -1247,9 +1258,10 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                     &line_trim_start[..line_trim_start.len() - self.curr_token().len()],
                     cmd_kind,
                 ) {
-                    if let RecKind::Value(ref c) = self.completion.rec_list[kind_match.hash_i].kind
+                    if let RecKind::Value(range) | RecKind::UserDefined { range, .. } =
+                        &self.completion.rec_list[kind_match.hash_i].kind
                     {
-                        self.completion.indexer.multiple = c.contains(&nvals);
+                        self.completion.indexer.multiple = range.contains(&nvals);
                     }
                 }
             }
@@ -1456,10 +1468,10 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 .expect("guard clause covers `UserInput` and `Null`"),
         );
 
-        self.line.err = if self.completion.indexer.recs == USER_INPUT {
-            self.check_value_err()
+        if self.completion.indexer.recs == USER_INPUT {
+            self.check_value_err();
         } else {
-            false
+            self.line.err = false;
         };
 
         self.change_line_raw(new_line)?;
