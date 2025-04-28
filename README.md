@@ -46,6 +46,7 @@ to refinement.
 - Navigate previous commands with up and down arrows <kbd>↑</kbd>, <kbd>↓</kbd>.
 - Colored line styling (opt-out by default): highlights commands, arguments, quoted strings, and errors (e.g., mismatched quotes,
   missing requirements, invalid arguments, commands, or values). Inspired by PowerShell.
+- User defined parsing rules
 - Customizable prompt and prompt separator.
 - Buffered key inputs are discarded during a commands execution.
 - Clear the current line with <kbd>Ctrl</kbd> + <kbd>C</kbd>.
