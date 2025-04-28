@@ -140,7 +140,7 @@ impl InnerScheme {
     }
 
     /// **Note**: parsing rules are **only** valid when kind is `RecKind::UserDefined`  
-    /// Function should return `true` if `&str` is _not_ valid
+    /// Function should return `true` if `&str` is valid
     pub const fn with_parsing_rule(mut self, f: fn(&str) -> bool) -> Self {
         self.data.kind = match self.data.kind {
             RecKind::UserDefined {
@@ -738,7 +738,7 @@ impl SliceData {
             }
             RecKind::UserDefined { range, parse_fn } => {
                 if range.contains(&arg_count.unwrap_or(1))
-                    && parse_fn.map_or(true, |parse_err| !parse_err(data.to_slice_unchecked(line)))
+                    && parse_fn.map_or(true, |valid| valid(data.to_slice_unchecked(line)))
                 {
                     data.hash_i = VALID
                 }
@@ -1006,7 +1006,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             // other `Value` and `UserDefined` errors do not need to be checked since `update_completion`
             // will set `curr_value` to an invalid instance returning the error condition prior this fn call
             RecKind::UserDefined { parse_fn, .. } => {
-                trailing.is_empty() || parse_fn.is_some_and(|parse_err| parse_err(curr_token))
+                trailing.is_empty() || parse_fn.is_some_and(|valid| !valid(curr_token))
             }
             RecKind::Value(_) => {
                 trailing.is_empty() || !self.completion.valid_rec_prefix(curr_token)

@@ -121,18 +121,12 @@ const ECHO_INNER: &[InnerScheme; 2] = &[
     InnerScheme::flag().with_parent(Parent::Entry(COMMAND_RECS[0])),
 ];
 
-fn invalid_side_ct(value: &str) -> bool {
-    value
-        .parse::<u8>()
-        .map_or(true, |v| !(2..=120).contains(&v))
-}
-
 const ROLL_INNER: &[InnerScheme; 1] = &[
     // sides
     // Set max user defined input of 1 and link to the parent command "roll"
     InnerScheme::user_defined(1)
         .with_parent(Parent::Entry(COMMAND_RECS[1]))
-        .with_parsing_rule(invalid_side_ct),
+        .with_parsing_rule(|value| value.parse::<u8>().is_ok_and(|v| (2..=120).contains(&v))),
 ];
 
 // Our context can store all default/persistent state
