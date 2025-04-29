@@ -46,7 +46,7 @@ to refinement.
 - Navigate previous commands with up and down arrows <kbd>↑</kbd>, <kbd>↓</kbd>.
 - Colored line styling (opt-out by default): highlights commands, arguments, quoted strings, and errors (e.g., mismatched quotes,
   missing requirements, invalid arguments, commands, or values). Inspired by PowerShell.
-- User defined parsing rules
+- User defined parsing rules and ability to opt-out of auto applied '--help' arguments.
 - Customizable prompt and prompt separator.
 - Buffered key inputs are discarded during a commands execution.
 - Clear the current line with <kbd>Ctrl</kbd> + <kbd>C</kbd>.
@@ -60,7 +60,13 @@ to refinement.
 ## Path to Release
 #### TODOs before a crates.io release
 - Movable cursor support (e.g., left/right arrow navigation, single char at minimum and word jumps).
-- Completion overhaul: revamp public interface with proc-macro derive or a builder pattern; consider a full rework.
+- Completion overhaul:
+  - Current implementation is quite complex; consider a full rework.
+  - Still needs proper support for recursive sub-commands, currently subcommands can only go one layer down by
+    masking as a static 'Value'.
+  - All completion entries have a global namespace, this limitation does not allow for different commands to
+    have the same arguments(short/long). 
+  - proc-macro derive would make UX very easy.
 - Tests:
   - Integration tests for multi-line text rendering.
   - State tracking tests for line completion (if current implementation persists).
@@ -70,3 +76,12 @@ to refinement.
 Contributions are welcomed, especially since this project has been moved to the back-burner and is not my highest priority. Feel
 free to submit PRs for new features or tackling TODOs. Please keep the public interface well-documented—it’s already in good
 shape.
+
+## Build Documentation
+Building documentation requires the nightly rust toolchain to be installed.
+```
+git clone https://github.com/WardLordRuby/repl-oxide.git
+cd .\repl-oxide
+$env:RUSTDOCFLAGS="--cfg docsrs"
+cargo +nightly doc --no-deps --all-features
+```
