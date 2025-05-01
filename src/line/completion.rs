@@ -907,27 +907,34 @@ impl Completion {
 
     /// Caller must ensure that the given line is `LineData.input.trim_start()` as internally
     /// [SliceData::to_slice_unchecked] is called
-    fn hash_arg_unchecked(&self, line: &str, arg: &mut SliceData) {
-        let arg_str = arg.to_slice_unchecked(line);
+    fn hash_arg_unchecked(&self, line_trim_start: &str, arg: &mut SliceData) {
+        let arg_str = arg.to_slice_unchecked(line_trim_start);
         if !arg_str.starts_with('-') {
             return;
         }
-        let command = self
+        if let Some(i) =
+            self.trimmed_arg_valid_i_unchecked(arg_str.trim_start_matches('-'), line_trim_start)
+        {
+            arg.hash_i = i;
+        }
+    }
+
+    fn trimmed_arg_valid_i_unchecked(&self, arg: &str, line_trim_start: &str) -> Option<usize> {
+        let cmd = self
             .curr_command()
             .expect("can only set arg if command is valid")
-            .to_slice_unchecked(line);
-        let arg_str = arg_str.trim_start_matches('-');
-        if let Some(&i) = self.rec_map.get(arg_str) {
-            if match self.rec_list[i].parent {
-                // `hash_command_unchecked` _only_ provides case leeway for 'Pascal Case' commands
-                // making it fine to ignore all case here
-                Some(Parent::Entry(p)) => p.eq_ignore_ascii_case(command),
-                Some(Parent::Universal) => true,
-                _ => false,
-            } {
-                arg.hash_i = i;
-            }
+            .to_slice_unchecked(line_trim_start);
+        let i = self.rec_map.get(arg).copied()?;
+        if match self.rec_list[i].parent {
+            // `hash_command_unchecked` _only_ provides case leeway for 'Pascal Case' commands
+            // making it fine to ignore all case here
+            Some(Parent::Entry(p)) => p.eq_ignore_ascii_case(cmd),
+            Some(Parent::Universal) => true,
+            _ => false,
+        } {
+            return Some(i);
         }
+        None
     }
 
     /// Caller must ensure that the given line is `LineData.input.trim_start()` as internally
@@ -998,9 +1005,28 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 ) {
                     Ordering::Greater => true,
                     Ordering::Equal => false,
-                    Ordering::Less => !self
-                        .completion
-                        .valid_rec_prefix(curr_token.trim_start_matches('-')),
+                    Ordering::Less => {
+                        let dashes = curr_token.chars().take_while(|&c| c == '-').count();
+                        let rest = curr_token.get(dashes..).filter(|r| !r.is_empty());
+                        match (dashes, rest) {
+                            (0..3, None) => false,
+                            (0 | 2, Some(input)) => !self.completion.valid_rec_prefix(input),
+                            (1, Some(HELP_SHORT)) => {
+                                let parent_hash = self
+                                    .completion
+                                    .curr_command()
+                                    .expect("can only set arg if command is valid")
+                                    .hash_i;
+                                !self.completion.rec_list[parent_hash].has_help
+                            }
+                            (1, Some(input)) if input.chars().nth(1).is_none() => self
+                                .completion
+                                // input line is calculated the same way it is within `update_completion`
+                                .trimmed_arg_valid_i_unchecked(input, self.line.input.trim_start())
+                                .is_none(),
+                            _ => true,
+                        }
+                    }
                 }
             }
             // other `Value` and `UserDefined` errors do not need to be checked since `update_completion`
@@ -1112,8 +1138,8 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
 
         let line_trim_start = self.line.input.trim_start();
         if line_trim_start.is_empty() {
-            // `comp_enabled` can only be set when `!Completion.is_empty()` via checks in `enable_completion` and
-            // `ReplBuilder::build`. Making it safe to call `default_recommendations` here
+            // `comp_enabled` can only be set when `!Completion.is_empty()` via checks in`enable_completion`
+            // and `ReplBuilder::build`. Making it safe to call `default_recommendations` here
             self.completion.set_default_recommendations_unchecked();
             self.line.err = false;
             self.completion.input.ending = LineEnd::default();
@@ -1194,8 +1220,8 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             let kind = new
                 .as_mut()
                 .and_then(|token| {
-                    // Safety: can call into `to_slice_unchecked` since the above slice input to `try_parse_token_from_end` and `count_vals_in_slice`
-                    // both use `line_trim_start` and the beginning of `line_trim_start` was not sliced
+                    // can call into `to_slice_unchecked` since the above slice input to `try_parse_token_from_end` and
+                    // `count_vals_in_slice` both use `line_trim_start` and the beginning of `line_trim_start` was not sliced
                     let token_slice = token.to_slice_unchecked(line_trim_start);
                     (token_slice == HELP_ARG || token_slice == HELP_ARG_SHORT).then(|| {
                         token.hash_i = HELP;
