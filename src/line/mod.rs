@@ -31,7 +31,9 @@ use crossterm::{
     event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
     style::Print,
-    terminal::{BeginSynchronizedUpdate, Clear, ClearType::FromCursorDown, EndSynchronizedUpdate},
+    terminal::{
+        BeginSynchronizedUpdate, Clear, ClearType::FromCursorDown, EndSynchronizedUpdate, SetSize,
+    },
     QueueableCommand,
 };
 use shellwords::split as shellwords_split;
@@ -541,6 +543,19 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         self.line.len = line.chars().count() as u16;
         std::mem::swap(&mut self.line.input, &mut line);
         Ok(line)
+    }
+
+    /// Returns the current `(columns, rows)` that is stored in the `Repl`'s memory.
+    pub fn terminal_size(&self) -> (u16, u16) {
+        self.term_size
+    }
+
+    /// This method **must** be used to make modifications to the terminals size, otherwise line wrapping
+    /// logic will not be in sync.
+    pub fn set_terminal_size(&mut self, (columns, rows): (u16, u16)) -> io::Result<()> {
+        self.term.queue(SetSize(columns, rows))?;
+        self.term_size = (columns, rows);
+        Ok(())
     }
 
     fn enter_command(&mut self) -> io::Result<&str> {
