@@ -423,7 +423,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                     .first()
                     .map(|&rec| (rec, &self.completion.rec_data_from_index(0).kind))?;
 
-                let format_as_arg = self.completion.arg_format(kind)?;
+                let format_as_arg = self.completion.arg_format(recommendation, kind)?;
                 let mut last_token = self
                     .input()
                     .rsplit_once(char::is_whitespace)

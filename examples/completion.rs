@@ -112,7 +112,8 @@ const ECHO_INNER: &[InnerScheme; 2] = &[
         // Describe the recommendation kind as `value` (set enum) with max input of 1
         RecData::new(RecKind::value_with_num_args(1))
             .with_parent(Parent::Entry(COMMAND_RECS[0]))
-            .with_recommendations(&["lower", "upper"]),
+            .with_recommendations(&["lower", "upper"])
+            .without_help(),
         None,
     ),
     // reverse

@@ -782,7 +782,10 @@ impl Completion {
     #[inline]
     fn trailing<'a>(&self, line_trim_start: &'a str) -> &'a str {
         self.last_key().map_or(line_trim_start, |key| {
-            line_trim_start[key.byte_start + key.slice_len..].trim()
+            let trim = line_trim_start[key.byte_start + key.slice_len..].trim();
+            trim.strip_prefix(HELP_ARG)
+                .or(trim.strip_prefix(HELP_ARG_SHORT))
+                .unwrap_or(trim)
         })
     }
     #[inline]
@@ -809,10 +812,12 @@ impl Completion {
     }
 
     #[inline]
-    fn valid_rec_prefix(&self, str: &str) -> bool {
-        self.recommendations
-            .first()
-            .is_some_and(|next| next.strip_prefix(str).is_some())
+    fn valid_rec_prefix(&self, str: &str, has_help: bool) -> bool {
+        (has_help && HELP_STR.starts_with(str.trim_start_matches('-')))
+            || self
+                .recommendations
+                .first()
+                .is_some_and(|next| next.starts_with(str))
     }
 
     fn try_parse_token_from_end(
@@ -966,7 +971,11 @@ impl Completion {
 
     /// Returns `Some(true)` or `Some(false)` if the given `kind` should be formatted as an argument or  
     /// `None` if there is no applicable formatting. eg. `RecKind::UserDefined` or `RecKind::Null`
-    pub(super) fn arg_format(&self, kind: &RecKind) -> Option<bool> {
+    pub(super) fn arg_format(&self, recommendation: &str, kind: &RecKind) -> Option<bool> {
+        if recommendation == HELP_STR {
+            return Some(self.curr_command().is_some());
+        }
+
         match kind {
             RecKind::Argument(_) => Some(true),
             RecKind::Value(_) | RecKind::Command => Some(false),
@@ -985,6 +994,11 @@ impl Completion {
     }
 }
 
+fn strip_dashes(str: &str) -> (usize, Option<&str>) {
+    let dashes = str.chars().take_while(|&c| c == '-').count();
+    (dashes, str.get(dashes..).filter(|r| !r.is_empty()))
+}
+
 impl<Ctx, W: Write> Repl<Ctx, W> {
     #[inline]
     fn curr_token(&self) -> &str {
@@ -996,8 +1010,16 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     }
 
     fn kind_err_conditions(&self, hash: usize, curr_token: &str, trailing: &str) -> bool {
-        match self.completion.rec_list[hash].kind {
-            RecKind::Command => !self.completion.valid_rec_prefix(curr_token),
+        let rec = self.completion.rec_list[hash];
+        let has_help = if hash == VALID {
+            self.completion
+                .curr_command()
+                .map(|cmd| self.completion.rec_list[cmd.hash_i].has_help)
+                .expect("valid can only be set once a base entry is provided")
+        } else {
+            rec.has_help
+        };
+        match rec.kind {
             RecKind::Argument(required) => {
                 match required.cmp(
                     &(self.completion.input.required_input_i.len()
@@ -1006,11 +1028,9 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                     Ordering::Greater => true,
                     Ordering::Equal => false,
                     Ordering::Less => {
-                        let dashes = curr_token.chars().take_while(|&c| c == '-').count();
-                        let rest = curr_token.get(dashes..).filter(|r| !r.is_empty());
-                        match (dashes, rest) {
+                        match strip_dashes(curr_token) {
+                            (0, Some(_)) => true,
                             (0..3, None) => false,
-                            (0 | 2, Some(input)) => !self.completion.valid_rec_prefix(input),
                             (1, Some(HELP_SHORT)) => {
                                 let parent_hash = self
                                     .completion
@@ -1024,34 +1044,37 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                                 // input line is calculated the same way it is within `update_completion`
                                 .trimmed_arg_valid_i_unchecked(input, self.line.input.trim_start())
                                 .is_none(),
+                            (2, Some(input)) => !self.completion.valid_rec_prefix(input, has_help),
                             _ => true,
                         }
                     }
                 }
             }
+            _ if curr_token.starts_with('-') => match strip_dashes(curr_token) {
+                (0..3, None) | (1, Some(HELP_SHORT)) | (2, Some(HELP_STR)) => !has_help,
+                (2, Some(input)) => !self.completion.valid_rec_prefix(input, has_help),
+                _ => true,
+            },
+            RecKind::Command => !self.completion.valid_rec_prefix(curr_token, has_help),
             // other `Value` and `UserDefined` errors do not need to be checked since `update_completion`
             // will set `curr_value` to an invalid instance returning the error condition prior this fn call
             RecKind::UserDefined { parse_fn, .. } => {
                 trailing.is_empty() || parse_fn.is_some_and(|valid| !valid(curr_token))
             }
             RecKind::Value(_) => {
-                trailing.is_empty() || !self.completion.valid_rec_prefix(curr_token)
+                trailing.is_empty() || !self.completion.valid_rec_prefix(curr_token, has_help)
             }
-            RecKind::Null if hash == VALID => !self
-                .completion
-                .valid_rec_prefix(curr_token.trim_start_matches('-')),
             RecKind::ArgFlag | RecKind::Help | RecKind::Null => !trailing.is_empty(),
         }
     }
 
-    fn check_value_err(&self) -> bool {
+    fn check_value_err(&self, line_trim_start: &str) -> bool {
         let rec_list = [
             self.completion.indexer.list.0,
             self.completion.indexer.list.1,
         ];
         let curr_token = self.curr_token();
-        let input = self.line.input.trim_start();
-        let trailing = self.completion.trailing(input);
+        let trailing = self.completion.trailing(line_trim_start);
         let mut errs = [false, false];
         for (err, hash) in errs.iter_mut().zip(rec_list) {
             *err = self.kind_err_conditions(hash, curr_token, trailing);
@@ -1074,28 +1097,29 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     fn add_help(&self, recs: [(&RecData, usize); 2], line_trim_start: &str) -> bool {
         let last_rec = recs[0].0;
 
-        (!matches!(
-            last_rec.kind,
-            RecKind::Value(_) | RecKind::UserDefined { .. }
-        ) || !self.kind_err_conditions(
-            recs[0].1,
-            self.curr_token(),
-            self.completion.trailing(line_trim_start),
-        )) && last_rec.has_help
-            || (self.completion.indexer.multiple
-                || self
-                    .completion
-                    .input
-                    .curr_value
-                    .is_some_and(|v| v.hash_i == VALID))
-                && recs[1].0.has_help
+        last_rec.has_help
+            && (!matches!(
+                last_rec.kind,
+                RecKind::Value(_) | RecKind::UserDefined { .. }
+            ) || {
+                let trailing = self.completion.trailing(line_trim_start);
+                trailing.is_empty()
+                    || !self.kind_err_conditions(recs[0].1, self.curr_token(), trailing)
+            })
+            || recs[1].0.has_help
+                && (self.completion.indexer.multiple
+                    || self
+                        .completion
+                        .input
+                        .curr_value
+                        .is_some_and(|v| v.hash_i == VALID))
     }
 
-    fn check_for_errors(&mut self) {
-        self.line.err = self.completion.curr_command().is_some_and_invalid()
+    fn check_for_errors(&self, line_trim_start: &str) -> bool {
+        self.completion.curr_command().is_some_and_invalid()
             || self.completion.curr_arg().is_some_and_invalid()
             || self.completion.curr_value().is_some_and_invalid()
-            || self.check_value_err()
+            || self.check_value_err(line_trim_start)
     }
 
     fn try_get_forward_arg_or_val(
@@ -1150,7 +1174,8 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         let state_changed = self.completion.input.check_state(line_trim_start);
 
         if !state_changed && self.completion.indexer.list.0 == INVALID {
-            return self.check_for_errors();
+            self.line.err = self.check_for_errors(line_trim_start);
+            return;
         }
 
         let multiple_switch_kind = self.completion.indexer.multiple
@@ -1377,7 +1402,8 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             if add_help {
                 self.completion.recommendations.push(HELP_STR);
             }
-            return self.check_for_errors();
+            self.line.err = self.check_for_errors(line_trim_start);
+            return;
         }
 
         let input_lower = self.curr_token().trim_start_matches('-').to_lowercase();
@@ -1421,7 +1447,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         }
 
         self.completion.recommendations = recommendations;
-        self.check_for_errors();
+        self.line.err = self.check_for_errors(line_trim_start);
     }
 
     /// Changes the current user input to either `Next` or `Previous` suggestion depending on the given direction
@@ -1514,12 +1540,12 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
 
         let new_line = format_line(
             self.completion
-                .arg_format(kind)
+                .arg_format(recommendation, kind)
                 .expect("guard clause covers `UserInput` and `Null`"),
         );
 
         self.line.err = if self.completion.indexer.recs == USER_INPUT {
-            self.check_value_err()
+            self.check_value_err(&new_line)
         } else {
             false
         };
