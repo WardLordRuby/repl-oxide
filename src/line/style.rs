@@ -256,7 +256,7 @@ fn parse_quoted_token(token: &str, mut open: Option<char>) -> Option<QuoteSlice>
             }
             None => match consecutive_closed_i {
                 Some(j) => {
-                    consecutive = if QUOTES.iter().any(|&quote| ch == quote) {
+                    consecutive = if QUOTES.contains(&ch) {
                         open = Some(ch);
                         consecutive && i == j + QUOTE_LEN
                     } else {
@@ -264,7 +264,7 @@ fn parse_quoted_token(token: &str, mut open: Option<char>) -> Option<QuoteSlice>
                     }
                 }
                 None => {
-                    if QUOTES.iter().any(|&quote| ch == quote) {
+                    if QUOTES.contains(&ch) {
                         open = Some(ch);
                         quote_found = true;
                     }
