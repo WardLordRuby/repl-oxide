@@ -18,6 +18,8 @@ pub mod ansi_code {
     pub const DIM_WHITE: &str = "\x1b[90m";
     pub const RESET: &str = "\x1b[0m";
 
+    pub const CLEAR_LINE: &str = "\r\x1b[J";
+
     pub(super) const BOLD: &str = "\x1b[1m";
     pub(super) const RED_BOLD: &str = concat!("\x1b[1;", RED_COLOR_CODE, "m");
 }

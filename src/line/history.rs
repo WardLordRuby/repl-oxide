@@ -6,9 +6,35 @@ use std::{
     io::{self, Write},
 };
 
+#[non_exhaustive]
+#[derive(Debug)]
+pub enum TagError {
+    EmptyHistory,
+}
+
+struct Entry {
+    value: String,
+    tag: Option<u32>,
+}
+
+impl Entry {
+    fn untagged(value: String) -> Self {
+        Self { value, tag: None }
+    }
+
+    #[inline]
+    fn value(&self) -> &str {
+        &self.value
+    }
+    #[inline]
+    fn cloned(&self) -> String {
+        self.value.clone()
+    }
+}
+
 #[derive(Default)]
 pub(super) struct History {
-    prev_entries: BTreeMap<usize, String>,
+    prev_entries: BTreeMap<usize, Entry>,
     value_order_map: HashMap<u64, usize>,
     top: usize,
     temp_top: String,
@@ -16,28 +42,39 @@ pub(super) struct History {
 }
 
 impl History {
+    #[inline]
+    fn pairs<'a>((ord, entry): (&usize, &'a Entry)) -> (usize, &'a str) {
+        (*ord, entry.value())
+    }
+
     /// Tries to get the next position and entry in the history after `curr_pos`
     #[inline]
-    fn next(&self) -> Option<(&usize, &String)> {
-        self.prev_entries.range(self.curr_pos + 1..).next()
+    fn next(&self) -> Option<(usize, &str)> {
+        self.prev_entries
+            .range(self.curr_pos + 1..)
+            .next()
+            .map(Self::pairs)
     }
 
     /// Tries to get the next_back position and entry in the history before `curr_pos`
     #[inline]
-    fn next_back(&self) -> Option<(&usize, &String)> {
-        self.prev_entries.range(..self.curr_pos).next_back()
+    fn next_back(&self) -> Option<(usize, &str)> {
+        self.prev_entries
+            .range(..self.curr_pos)
+            .next_back()
+            .map(Self::pairs)
     }
 
     /// Items yield from most recent to oldest
     #[inline]
-    pub(super) fn iter(&self) -> impl Iterator<Item = (&usize, &String)> {
-        self.prev_entries.iter().rev()
+    pub(super) fn iter(&self) -> impl Iterator<Item = (usize, &str)> {
+        self.prev_entries.iter().map(Self::pairs).rev()
     }
 
     /// Returns the most recent entry
     #[inline]
     pub(super) fn last_entry(&self) -> Option<&str> {
-        self.prev_entries.values().next_back().map(String::as_str)
+        self.prev_entries.values().next_back().map(Entry::value)
     }
 
     /// Returns the position of the first entry
@@ -54,8 +91,8 @@ impl History {
 
     /// Returns the entry at a given position  
     #[inline]
-    pub(super) fn get(&self, position: &usize) -> Option<&String> {
-        self.prev_entries.get(position)
+    pub(super) fn get(&self, position: &usize) -> Option<&str> {
+        self.prev_entries.get(position).map(Entry::value)
     }
 
     #[inline]
@@ -85,11 +122,16 @@ impl History {
                 *prev_p = new_last_p;
             })
             .or_insert_with(|| {
-                self.prev_entries.insert(new_last_p, add.to_string());
+                self.prev_entries
+                    .insert(new_last_p, Entry::untagged(add.to_string()));
                 new_last_p
             });
 
         self.reset_idx();
+    }
+
+    fn get_skip_ct(max: Option<usize>, len: usize) -> usize {
+        len.saturating_sub(max.unwrap_or(len))
     }
 }
 
@@ -123,7 +165,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// the correct order of the history stack see: [`Self::export_history`].
     #[inline]
     pub fn history_entries(&self) -> impl Iterator<Item = &str> {
-        self.history.prev_entries.values().rev().map(String::as_str)
+        self.history.prev_entries.values().rev().map(Entry::value)
     }
 
     /// Changes the current line to the previous history entry if available
@@ -138,7 +180,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         let (pos, entry) = self
             .history
             .next_back()
-            .map(|(&pos, entry)| (pos, entry.to_string()))
+            .map(|(pos, entry)| (pos, entry.to_string()))
             .expect("missed early return so `curr_pos` must be greater than the `first_position`");
 
         let prev = self.change_line(entry)?;
@@ -168,7 +210,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         } else {
             self.history
                 .next()
-                .map(|(&pos, entry)| (pos, entry.to_string()))
+                .map(|(pos, entry)| (pos, entry.to_string()))
                 .expect("`curr_pos` is neither top nor `last_position`, so there must be at least one more entry")
         };
 
@@ -179,19 +221,51 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
 
     /// Returns history exported via clone as a new `Vec` where the most recent commands are on the top of the stack.
     pub fn export_history(&self, max: Option<usize>) -> Vec<String> {
-        let skip = self.history.prev_entries.len()
-            - max
-                .filter(|&m| {
-                    debug_assert!(m != 0, "use `Vec::new`");
-                    m <= self.history.prev_entries.len()
-                })
-                .unwrap_or(self.history.prev_entries.len());
+        let skip = History::get_skip_ct(max, self.history.prev_entries.len());
 
         self.history
             .prev_entries
             .values()
             .skip(skip)
-            .cloned()
+            .map(Entry::cloned)
             .collect()
+    }
+
+    /// Returns history exported via clone as a new `Vec` where the most recent commands are on the top of the stack
+    /// and only contain entries for which the closure returns `true`.
+    pub fn export_filtered_history(
+        &self,
+        f: impl Fn(Option<u32>) -> bool,
+        max: Option<usize>,
+    ) -> Vec<String> {
+        let filtered = self
+            .history
+            .prev_entries
+            .values()
+            .filter(|entry| f(entry.tag))
+            .map(Entry::value)
+            .collect::<Vec<_>>();
+
+        let skip = History::get_skip_ct(max, filtered.len());
+
+        filtered
+            .into_iter()
+            .skip(skip)
+            .map(str::to_string)
+            .collect()
+    }
+
+    /// Provides mutable access to the tag on the last entry added to history. Can return an error if history
+    /// is empty. Note: Each `String` stored in the history can only appear once, thus if multiple tags are needed
+    /// bitflags must be used.
+    pub fn tag_last_history(&mut self, set: impl FnOnce(&mut Option<u32>)) -> Result<(), TagError> {
+        let Some(mut last) = self.history.prev_entries.last_entry() else {
+            return Err(TagError::EmptyHistory);
+        };
+
+        let last = last.get_mut();
+        set(&mut last.tag);
+
+        Ok(())
     }
 }

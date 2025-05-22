@@ -1030,7 +1030,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                     Ordering::Less => {
                         match strip_dashes(curr_token) {
                             (0, Some(_)) => true,
-                            (0..3, None) => false,
+                            (0..=2, None) => false,
                             (1, Some(HELP_SHORT)) => {
                                 let parent_hash = self
                                     .completion
@@ -1051,7 +1051,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 }
             }
             _ if curr_token.starts_with('-') => match strip_dashes(curr_token) {
-                (0..3, None) | (1, Some(HELP_SHORT)) | (2, Some(HELP_STR)) => !has_help,
+                (0..=2, None) | (1, Some(HELP_SHORT)) | (2, Some(HELP_STR)) => !has_help,
                 (2, Some(input)) => !self.completion.valid_rec_prefix(input, has_help),
                 _ => true,
             },

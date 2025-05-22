@@ -414,7 +414,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             .iter()
             .find_map(|(p, prev)| {
                 prev.strip_prefix(self.input())
-                    .map(|str| (str, GhostTextMeta::History { pos: *p }))
+                    .map(|str| (str, GhostTextMeta::History { pos: p }))
             })
             .or_else(|| {
                 let (recommendation, kind) = self
@@ -579,7 +579,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                     self.history
                         .get(&pos)
                         .expect("set meta `pos` is valid position")
-                        .clone(),
+                        .to_string(),
                 )?;
             }
             GhostTextMeta::Recommendation { len } => {
