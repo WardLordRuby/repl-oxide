@@ -1103,8 +1103,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 RecKind::Value(_) | RecKind::UserDefined { .. }
             ) || {
                 let trailing = self.completion.trailing(line_trim_start);
-                trailing.is_empty()
-                    || !self.kind_err_conditions(recs[0].1, self.curr_token(), trailing)
+                !self.kind_err_conditions(recs[0].1, self.curr_token(), trailing)
             })
             || recs[1].0.has_help
                 && (self.completion.indexer.multiple
