@@ -46,14 +46,16 @@ to refinement.
 - Navigate previous commands with up and down arrows <kbd>↑</kbd>, <kbd>↓</kbd>.
 - Colored line styling (opt-out by default): highlights commands, arguments, quoted strings, and errors (e.g., mismatched quotes,
   missing requirements, invalid arguments, commands, or values). Inspired by PowerShell.
-- User defined parsing rules and ability to opt-out of auto applied '--help' arguments.
+- User defined parsing rules and ability to opt-out of auto applied `--help` arguments.
 - Customizable prompt and prompt separator.
 - Buffered key inputs are discarded during a commands execution.
 - Clear the current line with <kbd>Ctrl</kbd> + <kbd>C</kbd>.
 - Quit shortcuts, <kbd>Ctrl</kbd> + <kbd>D</kbd> or <kbd>Ctrl</kbd> + <kbd>C</kbd> when the input line is empty.
 - Define a custom quit command (e.g., command triggered by <kbd>Ctrl</kbd> + <kbd>D</kbd> or <kbd>Ctrl</kbd> + <kbd>C</kbd>).
 - Import/Export command history.
+- Tag history entries, filter exports via tag api.
 - Dynamic input hooks with async support for precise control over input events.
+- Tag input hooks, force remove via tag api.
 - Cross-platform support: works on all platforms that crossterm supports.
 - Multi-line command and resize support.
 
