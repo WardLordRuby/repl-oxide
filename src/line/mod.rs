@@ -66,6 +66,7 @@ pub struct Repl<Ctx, W: Write> {
     /// (columns, rows)
     term_size: (u16, u16),
     uneventful: bool,
+    render_disabled: bool,
     custom_quit: Option<Vec<String>>,
     cursor_at_start: bool,
     command_entered: bool,
@@ -186,6 +187,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             term,
             term_size,
             uneventful: false,
+            render_disabled: false,
             cursor_at_start: false,
             command_entered: true,
             custom_quit,
@@ -295,6 +297,12 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         self.line.update_prompt_len();
     }
 
+    /// Sets the currently displayed prompt separator to the library supplied default
+    pub fn set_default_prompt_separator(&mut self) {
+        self.line.prompt_separator = String::from(DEFAULT_SEPARATOR);
+        self.line.update_prompt_len();
+    }
+
     /// Sets the currently displayed prompt and prompt separator to the library supplied default
     pub fn set_default_prompt_and_separator(&mut self) {
         self.line.prompt = String::from(DEFAULT_PROMPT);
@@ -370,7 +378,11 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// [`run`]: crate::line::Repl::run
     /// [`spawn`]: crate::line::Repl::spawn
     pub fn render(&mut self, context: &mut Ctx) -> io::Result<()> {
-        if std::mem::take(&mut self.uneventful) {
+        if let Some(res) = self.try_init_input_hook(context) {
+            res?
+        };
+
+        if std::mem::take(&mut self.uneventful) || self.render_disabled {
             return Ok(());
         }
 
@@ -380,10 +392,6 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             // library ensures to always be displaying an acceptable state
             self.cursor_at_start = false;
         }
-
-        if let Some(res) = self.try_init_input_hook(context) {
-            res?
-        };
 
         let line_len = self.line_len();
         let line_len_sub_1 = line_len.saturating_sub(1);
@@ -455,7 +463,19 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         self.move_to_beginning(line_len_sub_1 + ghost_text.chars().count() as u16)
     }
 
-    /// Setting uneventful will skip the next call to `render`
+    /// Will skip all calls to render until [`Self::enable_render`] is called
+    #[inline]
+    pub fn disable_render(&mut self) {
+        self.render_disabled = true;
+    }
+
+    /// Allows [`Self::render`] to execute normally
+    #[inline]
+    pub fn enable_render(&mut self) {
+        self.render_disabled = false;
+    }
+
+    /// Setting uneventful will skip the next call to [`Self::render`]
     #[inline]
     pub fn set_uneventful(&mut self) {
         self.uneventful = true
@@ -657,8 +677,6 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         context: &mut Ctx,
         event: Event,
     ) -> io::Result<EventLoop<Ctx, W>> {
-        execute!(self.term, BeginSynchronizedUpdate)?;
-
         if !self.input_hooks.is_empty() {
             if let Event::Key(KeyEvent {
                 kind: KeyEventKind::Press,
@@ -677,6 +695,9 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 return Ok(hook_output.event);
             }
         }
+
+        execute!(self.term, BeginSynchronizedUpdate)?;
+
         match event {
             Event::Key(KeyEvent {
                 code: KeyCode::Char('c'),
@@ -743,11 +764,11 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 }
                 self.new_line()?;
             }
-            Event::Resize(x, y) => self.term_size = (x, y),
-            Event::Paste(new) => self.append_to_line(&new)?,
+            Event::Resize(x, y) if self.term_size != (x, y) => self.term_size = (x, y),
+            Event::Paste(new) if !self.render_disabled => self.append_to_line(&new)?,
             _ => self.set_uneventful(),
         }
-        if self.uneventful() {
+        if self.uneventful {
             execute!(self.term, EndSynchronizedUpdate)?;
         }
         Ok(EventLoop::Continue)
