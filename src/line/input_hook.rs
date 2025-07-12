@@ -100,7 +100,7 @@ impl<Ctx, W: Write, T> AsyncCallback<Ctx, W> for T where
 /// [`KeyEvent`]: <https://docs.rs/crossterm/latest/crossterm/event/struct.KeyEvent.html>
 /// [`KeyEventKind::Press`]: <https://docs.rs/crossterm/latest/crossterm/event/enum.KeyEventKind.html>
 pub struct InputHook<Ctx, W: Write> {
-    tag: Option<i32>,
+    tag: Option<u32>,
     uid: usize,
     pub(super) init_revert: HookStates<Ctx, W>,
     pub(super) event_hook: Box<dyn InputEventHook<Ctx, W>>,
@@ -214,7 +214,7 @@ impl<Ctx, W: Write> InputHook<Ctx, W> {
 /// [`remove_current_hook_by_error`]: Repl::remove_current_hook_by_error
 #[derive(Copy, Clone, Debug)]
 pub struct HookID {
-    tag: Option<i32>,
+    tag: Option<u32>,
     uid: usize,
 }
 
@@ -244,7 +244,7 @@ impl HookID {
     /// This method will create a new `HookID` with a unique uid and tag it with the given `tag`.
     /// To create a new `HookID` with out a designated tag use [`HookID::default`]
     ///
-    /// `tag` must impl `Into<i32>`, As it would be most common to make the `tag` type an enum with only unit variants.
+    /// `tag` must impl `Into<u32>`, As it would be most common to make the `tag` type an enum with only unit variants.
     ///
     /// ### Note:
     /// This type of comparison extracts the discriminant's numerical value of an enum, meaning **only** one enum can
@@ -257,13 +257,13 @@ impl HookID {
     ///     Var2,
     /// }
     ///
-    /// impl From<MyHookTag> for i32 {
+    /// impl From<MyHookTag> for u32 {
     ///     fn from(value: MyHookTag) -> Self {
-    ///         value as i32
+    ///         value as u32
     ///     }
     /// }
     /// ```
-    pub fn tagged<T: Into<i32>>(tag: T) -> Self {
+    pub fn tagged<T: Into<u32>>(tag: T) -> Self {
         Self {
             tag: Some(tag.into()),
             uid: Self::generate_uid(),
@@ -413,7 +413,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// - `Err(io::Error)` hook removed and destructor returned err
     /// - `Ok(true)` hook removed and destructor succeeded or input hook had no destructor set
     /// - `Ok(false)` no hook to remove or queued hook UID does not match the UID of the given `err`
-    pub fn remove_current_hook_by_tag<T: Into<i32>>(
+    pub fn remove_current_hook_by_tag<T: Into<u32>>(
         &mut self,
         context: &mut Ctx,
         tag: T,
@@ -428,7 +428,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// - `Err(io::Error)` hook removed and destructor returned err
     /// - `Ok(true)` hook removed and/or destructor succeeded or input hook had no destructor set
     /// - `Ok(false)` no hook to remove or queued hook UID does not match the UID of the given `err`
-    pub fn remove_all_hooks_with_tag<T: Into<i32>>(
+    pub fn remove_all_hooks_with_tag<T: Into<u32>>(
         &mut self,
         context: &mut Ctx,
         tag: T,
