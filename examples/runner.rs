@@ -75,7 +75,7 @@ impl CommandContext {
         if let Some(numbers) = add {
             numbers.into_iter().for_each(|n| self.count += n);
         }
-        repl_handle.println(format!("Total seen: {}", self.count))?;
+        repl_handle.println(format_args!("Total seen: {}", self.count))?;
         Ok(CommandHandle::Processed)
     }
 }
@@ -110,7 +110,7 @@ async fn main() -> io::Result<()> {
     repl.run(&mut command_ctx).await?;
 
     // Perform cleanup / process final state
-    repl.println(format!(
+    repl.println(format_args!(
         "Uploaded total count: {}, to server!",
         command_ctx.count
     ))?;

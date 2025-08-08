@@ -262,7 +262,7 @@ impl RecData {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum RecKind {
     Command,
     Argument(usize),
@@ -275,6 +275,32 @@ pub enum RecKind {
     Help,
     Null,
 }
+
+impl PartialEq for RecKind {
+    fn eq(&self, other: &Self) -> bool {
+        use RecKind::*;
+        match (self, other) {
+            (Command | ArgFlag | Help | Null, Command | ArgFlag | Help | Null) => {
+                std::mem::discriminant(self) == std::mem::discriminant(other)
+            }
+            (Argument(a), Argument(b)) => a == b,
+            (Value(a), Value(b)) => a == b,
+            (
+                UserDefined {
+                    range: a,
+                    parse_fn: fn_a,
+                },
+                UserDefined {
+                    range: b,
+                    parse_fn: fn_b,
+                },
+            ) => a == b && fn_a.is_none() == fn_b.is_none(),
+            _ => false,
+        }
+    }
+}
+
+impl Eq for RecKind {}
 
 impl RecKind {
     /// Use when the command has no required number of user inputs
@@ -331,13 +357,12 @@ impl From<&'static CommandScheme> for Completion {
             data: &'static RecData,
             list: &[&'static RecData],
         ) {
-            assert!(
-                match map.insert(key, val) {
-                    None => true,
-                    Some(j) => list[j] == data,
-                },
-                "duplicate recommendation entries _must_ have identical nodes"
-            );
+            if let Some(j) = map.insert(key, val) {
+                assert_eq!(
+                    list[j], data,
+                    "duplicate recommendation entries _must_ have identical nodes"
+                )
+            }
         }
         fn try_insert_rec_set(
             kind: &RecKind,

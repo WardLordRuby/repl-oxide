@@ -56,9 +56,11 @@ const DEFAULT_PROMPT_LEN: u16 = DEFAULT_PROMPT.len() as u16 + DEFAULT_SEPARATOR.
 
 const NEW_LINE: &str = "\r\n";
 
-/// Callback used internally by [`Repl::process_parse_err`] for determining how [`ParseErr`]'s are handled.
+/// Callback used internally by [`Repl::process_parse_err`]
 ///
-/// This callback can be set via [`Repl::set_parse_err_hook`].
+/// `ParseErrHook`s define how [`ParseErr`]s are handled. `io::Error`s returned from this hook must be
+/// non-recoverable errors. They will result in termination of the run eval process loop. This callback
+/// can be set via [`ReplBuilder::with_custom_parse_err_hook`] or [`Repl::set_parse_err_hook`].
 pub trait ParseErrHook<Ctx, W: Write>:
     Fn(&mut Repl<Ctx, W>, ParseErr) -> io::Result<()> + Send + Sync + 'static
 {
@@ -262,7 +264,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         }
     }
 
-    /// Sets the hook that gets called when library default run eval process loops encounter a [`ParseErr`].\
+    /// Sets the [`ParseErrHook`] that gets called when library default run eval process loops encounter a [`ParseErr`].\
     /// **Note**: Prefer [`ReplBuilder::with_custom_parse_err_hook`] when possible.
     ///
     /// ## Example
@@ -294,7 +296,8 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         }
 
         let Ok(res) = timeout(Duration::from_millis(10), async {
-            while let Some(event_res) = stream.fuse().next().await {
+            let mut stream = stream.fuse();
+            while let Some(event_res) = stream.next().await {
                 if let Event::Resize(x, y) = event_res? {
                     self.term_size = (x, y)
                 }
@@ -544,7 +547,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
 
         self.ghost_text = Some(meta);
         self.term
-            .queue(Print(format!("{DIM_WHITE}{ghost_text}{RESET}")))?;
+            .queue(Print(format_args!("{DIM_WHITE}{ghost_text}{RESET}")))?;
         self.move_to_beginning(line_len_sub_1 + ghost_text.chars().count() as u16)
     }
 

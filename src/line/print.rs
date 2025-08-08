@@ -94,11 +94,7 @@ where
     write!(
         writer,
         "{ml_fmt}{}",
-        if !ml_fmt.ends_with(NEW_LINE) {
-            NEW_LINE
-        } else {
-            ""
-        }
+        if !ml_fmt.ends_with(NEW_LINE) { NEW_LINE } else { "" }
     )?;
 
     Ok(())

@@ -107,11 +107,7 @@ impl Display for LineData {
             f,
             "{BOLD}{}{}{}{RESET} {stylized_input}",
             self.prompt.as_str(),
-            if self.err || mismatched_quotes {
-                RED_BOLD
-            } else {
-                ""
-            },
+            if self.err || mismatched_quotes { RED_BOLD } else { "" },
             self.prompt_separator.as_str()
         )
     }
@@ -231,7 +227,7 @@ struct QuoteSlice<'a> {
 }
 
 /// Only returns `Some` if a quote is found
-fn parse_quoted_token(token: &str, mut open: Option<char>) -> Option<QuoteSlice> {
+fn parse_quoted_token(token: &str, mut open: Option<char>) -> Option<QuoteSlice<'_>> {
     let starts_with_quote = token.starts_with(QUOTES);
     let prev_open_token = open.is_some();
 

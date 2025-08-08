@@ -151,11 +151,12 @@ impl CommandContext {
         if let Some(side_count) = input_dice {
             if side_count != self.dice_sides {
                 self.dice_sides = side_count;
-                repl_handle.println(format!("Updated dice side preference to {side_count}"))?;
+                repl_handle
+                    .println(format_args!("Updated dice side preference to {side_count}"))?;
             }
         }
 
-        repl_handle.println(format!(
+        repl_handle.println(format_args!(
             "You rolled a {}",
             rand::rng().random_range(1..=self.dice_sides),
         ))?;

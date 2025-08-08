@@ -126,6 +126,11 @@ impl<Ctx, W: Write> ReplBuilder<'_, Ctx, W> {
         self
     }
 
+    /// Sets the [`ParseErrHook`] that gets called when library default run eval process loops encounter a [`ParseErr`].\
+    /// By default `ParseErr`s are displayed via a call to [`Repl::eprintln`], this behavior will be overwritten
+    /// by setting a custom parse error hook.
+    ///
+    /// [`ParseErr`]: crate::line::ParseErr
     pub fn with_custom_parse_err_hook(mut self, hook: impl ParseErrHook<Ctx, W>) -> Self {
         self.parse_err_hook = Some(Box::new(hook));
         self
