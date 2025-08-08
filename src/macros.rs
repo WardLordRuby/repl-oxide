@@ -57,7 +57,7 @@ macro_rules! general_event_process {
                 }
             }
             $crate::EventLoop::TryProcessInput(Err(mismatched_quotes)) => {
-                $repl.eprintln(mismatched_quotes)?
+                $repl.process_parse_err(mismatched_quotes)?
             }
         }
     };

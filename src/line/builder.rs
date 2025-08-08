@@ -1,7 +1,7 @@
 use crate::line::{
     completion::{CommandScheme, Completion},
     history::History,
-    LineData, Repl,
+    LineData, ParseErrHook, Repl,
 };
 
 use std::io::{self, ErrorKind, Write};
@@ -37,7 +37,7 @@ use shellwords::split as shellwords_split;
 /// Builder for custom REPL's
 ///
 /// Access through [`repl_builder`]
-pub struct ReplBuilder<'a, W: Write> {
+pub struct ReplBuilder<'a, Ctx, W: Write> {
     completion: Option<&'static CommandScheme>,
     custom_quit: Option<&'a str>,
     term: W,
@@ -46,12 +46,13 @@ pub struct ReplBuilder<'a, W: Write> {
     prompt_end: Option<String>,
     starting_history: Option<History>,
     style_enabled: bool,
+    parse_err_hook: Option<Box<dyn ParseErrHook<Ctx, W>>>,
 }
 
 /// Builder for [`Repl`]
 ///
 /// `Repl` must include a terminal that is compatible with executing commands via the `crossterm` crate.
-pub fn repl_builder<W: Write>(terminal: W) -> ReplBuilder<'static, W> {
+pub fn repl_builder<Ctx, W: Write>(terminal: W) -> ReplBuilder<'static, Ctx, W> {
     // await_debug_server(r"\\.\pipe\debug_log");
 
     ReplBuilder {
@@ -63,10 +64,11 @@ pub fn repl_builder<W: Write>(terminal: W) -> ReplBuilder<'static, W> {
         prompt_end: None,
         starting_history: None,
         style_enabled: true,
+        parse_err_hook: None,
     }
 }
 
-impl<'a, W: Write> ReplBuilder<'a, W> {
+impl<'a, Ctx, W: Write> ReplBuilder<'a, Ctx, W> {
     /// Supply a custom command to be executed when the user tries to quit with 'ctrl + c' when the current
     /// line is empty, or anytime 'ctrl + d' is entered. If none is supplied [`EventLoop::Break`] will be
     /// returned.
@@ -78,7 +80,7 @@ impl<'a, W: Write> ReplBuilder<'a, W> {
     }
 }
 
-impl<W: Write> ReplBuilder<'_, W> {
+impl<Ctx, W: Write> ReplBuilder<'_, Ctx, W> {
     /// Specify a starting size the the terminal should be set to on [`build`] if no size is supplied then
     /// size is found with a call to [`terminal::size`]
     ///
@@ -124,6 +126,11 @@ impl<W: Write> ReplBuilder<'_, W> {
         self
     }
 
+    pub fn with_custom_parse_err_hook(mut self, hook: impl ParseErrHook<Ctx, W>) -> Self {
+        self.parse_err_hook = Some(Box::new(hook));
+        self
+    }
+
     /// Builds a [`Repl`] that you can manually turn into a repl or call [`run`] / [`spawn`]
     /// on to start or spawn the repl process
     ///
@@ -138,7 +145,7 @@ impl<W: Write> ReplBuilder<'_, W> {
     /// [`spawn`]: crate::line::Repl::spawn
     /// [`&'static CommandScheme`]: crate::completion::CommandScheme
     /// [`terminal::size`]: <https://docs.rs/crossterm/latest/crossterm/terminal/fn.size.html>
-    pub fn build<Ctx>(mut self) -> io::Result<Repl<Ctx, W>> {
+    pub fn build(mut self) -> io::Result<Repl<Ctx, W>> {
         let term_size = match self.term_size {
             Some((columns, rows)) => {
                 self.term.queue(terminal::SetSize(columns, rows))?;
@@ -172,6 +179,7 @@ impl<W: Write> ReplBuilder<'_, W> {
             custom_quit,
             completion,
             self.starting_history,
+            self.parse_err_hook,
         ))
     }
 }

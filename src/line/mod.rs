@@ -56,6 +56,19 @@ const DEFAULT_PROMPT_LEN: u16 = DEFAULT_PROMPT.len() as u16 + DEFAULT_SEPARATOR.
 
 const NEW_LINE: &str = "\r\n";
 
+/// Callback used internally by [`Repl::process_parse_err`] for determining how [`ParseErr`]'s are handled.
+///
+/// This callback can be set via [`Repl::set_parse_err_hook`].
+pub trait ParseErrHook<Ctx, W: Write>:
+    Fn(&mut Repl<Ctx, W>, ParseErr) -> io::Result<()> + Send + Sync + 'static
+{
+}
+
+impl<Ctx, W: Write, T> ParseErrHook<Ctx, W> for T where
+    T: Fn(&mut Repl<Ctx, W>, ParseErr) -> io::Result<()> + Send + Sync + 'static
+{
+}
+
 /// Holds all context for REPL events
 pub struct Repl<Ctx, W: Write> {
     completion: Completion,
@@ -71,6 +84,7 @@ pub struct Repl<Ctx, W: Write> {
     cursor_at_start: bool,
     command_entered: bool,
     input_hooks: VecDeque<InputHook<Ctx, W>>,
+    parse_err_hook: ErrHook<Ctx, W>,
 }
 
 impl<Ctx, W: Write> Drop for Repl<Ctx, W> {
@@ -78,6 +92,18 @@ impl<Ctx, W: Write> Drop for Repl<Ctx, W> {
         execute!(self.term, cursor::Show).expect("Still accepting commands");
         crossterm::terminal::disable_raw_mode().expect("enabled on creation");
     }
+}
+
+#[derive(Default)]
+enum ErrHook<Ctx, W: Write> {
+    #[default]
+    Default,
+    Custom(Box<dyn ParseErrHook<Ctx, W>>),
+}
+
+#[inline]
+fn default_parse_err_hook<Ctx, W: Write>(repl: &mut Repl<Ctx, W>, err: ParseErr) -> io::Result<()> {
+    repl.eprintln(err)
 }
 
 #[derive(Default)]
@@ -179,6 +205,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         custom_quit: Option<Vec<String>>,
         completion: Completion,
         history: Option<History>,
+        parse_err_hook: Option<Box<dyn ParseErrHook<Ctx, W>>>,
     ) -> Self {
         Self {
             line,
@@ -193,7 +220,65 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             custom_quit,
             completion,
             input_hooks: VecDeque::new(),
+            parse_err_hook: parse_err_hook.map(ErrHook::Custom).unwrap_or_default(),
         }
+    }
+
+    /// The default processor for [`ParseErr`]s. This is used internally by [`Self::run`] / [`Self::spawn`]
+    /// and [`general_event_process!`]. This method is only relevant if you are writing a manual impl of the
+    /// main run eval print loop. In the case a manual repl implementation is used it is recommended you use
+    /// your own implementation of this method.
+    ///
+    /// [`general_event_process!`]: crate::general_event_process
+    pub fn process_parse_err(&mut self, err: ParseErr) -> io::Result<()> {
+        if let ErrHook::Default = self.parse_err_hook {
+            return default_parse_err_hook(self, err);
+        };
+
+        match std::mem::take(&mut self.parse_err_hook) {
+            ErrHook::Custom(hook) => {
+                hook(self, err)?;
+                self.parse_err_hook = ErrHook::Custom(hook);
+            }
+            ErrHook::Default => unreachable!("by early return"),
+        };
+
+        Ok(())
+    }
+
+    /// Returns the currently set [`ParseErrHook`] and replaces it with the default hook.
+    pub fn take_parse_err_hook(&mut self) -> Box<dyn ParseErrHook<Ctx, W>>
+    where
+        Ctx: 'static,
+        W: 'static,
+    {
+        if let ErrHook::Default = self.parse_err_hook {
+            return Box::new(default_parse_err_hook);
+        }
+
+        match std::mem::take(&mut self.parse_err_hook) {
+            ErrHook::Custom(set_hook) => set_hook,
+            ErrHook::Default => unreachable!("by early return"),
+        }
+    }
+
+    /// Sets the hook that gets called when library default run eval process loops encounter a [`ParseErr`].\
+    /// **Note**: Prefer [`ReplBuilder::with_custom_parse_err_hook`] when possible.
+    ///
+    /// ## Example
+    ///
+    /// ```ignore
+    /// let hook = repl.take_parse_err_hook();
+    /// repl.set_parse_err_hook(move |repl, err| {
+    ///     /* Additional code to execute on encountering `ParseErr` */
+    ///
+    ///     // Library default hook calls `repl.eprintln(err)`
+    ///     hook(repl, err)
+    /// });
+    /// ```
+    #[inline]
+    pub fn set_parse_err_hook(&mut self, hook: impl ParseErrHook<Ctx, W>) {
+        self.parse_err_hook = ErrHook::Custom(Box::new(hook))
     }
 
     /// It is recommended to call this method at the top of your read eval print loop see: [`render`]
