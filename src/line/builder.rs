@@ -34,9 +34,9 @@ use shellwords::split as shellwords_split;
 // }
 /* -------------------------------- Debug tool -------------------------------- */
 
-/// Builder for custom REPL's
+/// Builder for [`Repl`]s
 ///
-/// Access through [`repl_builder`]
+/// Access through [`Repl::new`]
 pub struct ReplBuilder<'a, Ctx, W: Write> {
     completion: Option<&'static CommandScheme>,
     custom_quit: Option<&'a str>,
@@ -49,22 +49,25 @@ pub struct ReplBuilder<'a, Ctx, W: Write> {
     parse_err_hook: Option<Box<dyn ParseErrHook<Ctx, W>>>,
 }
 
-/// Builder for [`Repl`]
-///
-/// `Repl` must include a terminal that is compatible with executing commands via the `crossterm` crate.
-pub fn repl_builder<Ctx, W: Write>(terminal: W) -> ReplBuilder<'static, Ctx, W> {
-    // await_debug_server(r"\\.\pipe\debug_log");
+impl<Ctx, W: Write> Repl<Ctx, W> {
+    /// Builder for [`Repl`]
+    ///
+    /// Must supply a writer that is compatible with executing commands via the `crossterm` crate.
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(terminal: W) -> ReplBuilder<'static, Ctx, W> {
+        // await_debug_server(r"\\.\pipe\debug_log");
 
-    ReplBuilder {
-        completion: None,
-        custom_quit: None,
-        term: terminal,
-        term_size: None,
-        prompt: None,
-        prompt_end: None,
-        starting_history: None,
-        style_enabled: true,
-        parse_err_hook: None,
+        ReplBuilder {
+            completion: None,
+            custom_quit: None,
+            term: terminal,
+            term_size: None,
+            prompt: None,
+            prompt_end: None,
+            starting_history: None,
+            style_enabled: true,
+            parse_err_hook: None,
+        }
     }
 }
 
@@ -172,7 +175,7 @@ impl<Ctx, W: Write> ReplBuilder<'_, Ctx, W> {
         crossterm::terminal::enable_raw_mode()?;
         self.term.queue(cursor::EnableBlinking)?;
 
-        Ok(Repl::new(
+        Ok(Repl::from(
             LineData::new(
                 self.prompt,
                 self.prompt_end,

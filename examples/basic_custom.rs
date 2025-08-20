@@ -4,7 +4,7 @@
 use repl_oxide::{
     clap::try_parse_from,
     executor::{CommandHandle, Executor},
-    general_event_process, repl_builder, Repl, StreamExt,
+    general_event_process, Repl, StreamExt,
 };
 
 use std::io::{self, Stdout};
@@ -57,7 +57,7 @@ async fn main() -> io::Result<()> {
     let mut command_ctx = CommandContext;
 
     // Build a default `Repl` to handle the repl state
-    let mut repl = repl_builder(io::stdout())
+    let mut repl = Repl::new(io::stdout())
         .build()
         .expect("input writer accepts crossterm commands");
 

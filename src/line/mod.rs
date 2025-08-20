@@ -200,7 +200,7 @@ pub enum EventLoop<Ctx, W: Write> {
 
 impl<Ctx, W: Write> Repl<Ctx, W> {
     #[inline]
-    fn new(
+    fn from(
         line: LineData,
         term: W,
         term_size: (u16, u16),

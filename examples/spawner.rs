@@ -5,7 +5,7 @@ use repl_oxide::{
     ansi_code::{GREEN, RED, RESET},
     clap::try_parse_from,
     executor::{CommandHandle, Executor},
-    repl_builder, Repl,
+    Repl,
 };
 
 use std::{
@@ -87,7 +87,7 @@ async fn check_for_update() -> Result<(), &'static str> {
 #[tokio::main]
 async fn main() -> io::Result<()> {
     // Spawn repl on the current runtime
-    let (repl_task, message_sender) = repl_builder(io::stdout())
+    let (repl_task, message_sender) = Repl::new(io::stdout())
         .build()
         .expect("input writer accepts crossterm commands")
         .spawn(CommandContext);

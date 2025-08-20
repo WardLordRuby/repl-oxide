@@ -5,7 +5,7 @@ use repl_oxide::{
     clap::try_parse_from,
     completion::{CommandScheme, InnerScheme, Parent, RecData, RecKind},
     executor::{CommandHandle, Executor},
-    repl_builder, Repl,
+    Repl,
 };
 
 use std::io::{self, Stdout};
@@ -207,7 +207,7 @@ async fn main() -> io::Result<()> {
     Command::command().print_help()?;
 
     // Build and run a new repl with our const `CommandScheme` structure
-    repl_builder(io::stdout())
+    Repl::new(io::stdout())
         .with_completion(COMPLETION)
         .build()
         .expect("input writer accepts crossterm commands")

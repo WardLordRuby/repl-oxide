@@ -5,7 +5,7 @@ use repl_oxide::{
     clap::try_parse_from,
     executor::{CommandHandle, Executor},
     input_hook::{HookStates, HookedEvent, InputHook},
-    repl_builder, Repl,
+    Repl,
 };
 
 use std::io::{self, Stdout};
@@ -100,7 +100,7 @@ async fn main() -> io::Result<()> {
     // Build and run a new `Repl` with a custom quit command "quit" (given string will be ran through
     // `try_execute_command`) to be ran if the user tries to quit with 'ctrl + c' (when the line is empty)
     // or 'ctrl + d'
-    repl_builder(io::stdout())
+    Repl::new(io::stdout())
         .with_custom_quit_command("quit")
         .build()
         .expect("input writer accepts crossterm commands")
