@@ -295,7 +295,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             return Ok(());
         }
 
-        let Ok(res) = timeout(Duration::from_millis(10), async {
+        timeout(Duration::from_millis(10), async {
             let mut stream = stream.fuse();
             while let Some(event_res) = stream.next().await {
                 if let Event::Resize(x, y) = event_res? {
@@ -305,10 +305,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             Ok(())
         })
         .await
-        else {
-            return Ok(());
-        };
-        res
+        .unwrap_or(Ok(()))
     }
 
     /// Get an exclusive reference to the supplied writer for the rare cases you want to manually write into
@@ -508,9 +505,9 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         let Some((ghost_text, meta)) = self
             .history
             .iter()
-            .find_map(|(p, prev)| {
+            .find_map(|(pos, prev)| {
                 prev.strip_prefix(self.input())
-                    .map(|str| (str, GhostTextMeta::History { pos: p }))
+                    .map(|str| (str, GhostTextMeta::History { pos }))
             })
             .or_else(|| {
                 let (recommendation, kind) = self

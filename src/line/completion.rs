@@ -370,21 +370,18 @@ impl From<&'static CommandScheme> for Completion {
             recs: Option<&'static [&'static str]>,
             at: usize,
         ) {
-            if let RecKind::Value(ref r) = kind {
+            if let RecKind::Value(r) = kind {
                 assert!(
                     r.start > 0,
                     "Values must have at least one required static input"
                 );
-                assert!(map
-                    .insert(
-                        at,
-                        HashSet::from_iter(
-                            recs.expect("`RecKind::Value` specified but no pre-determined values were supplied")
-                                .iter()
-                                .copied()
-                        )
-                    )
-                    .is_none())
+
+                const NOT_SUPPLIED: &str =
+                    "`RecKind::Value` specified but no pre-determined values were supplied";
+                let value_set = HashSet::from_iter(recs.expect(NOT_SUPPLIED).iter().copied());
+
+                assert!(!value_set.is_empty(), "{NOT_SUPPLIED}");
+                assert!(map.insert(at, value_set).is_none())
             }
         }
         fn try_insert_aliases(
@@ -418,9 +415,9 @@ impl From<&'static CommandScheme> for Completion {
         ) {
             match inner.data {
                 RecData {
-                    ref alias,
-                    ref recs,
-                    ref short,
+                    alias,
+                    recs,
+                    short,
                     kind: RecKind::Argument(_),
                     ..
                 } => {
@@ -451,7 +448,7 @@ impl From<&'static CommandScheme> for Completion {
                             );
                             insert_index(map, short_ch, l_i, &inner.data, list);
                         }
-                        try_insert_aliases(map, l_i, &inner.data, list, *alias, *recs, i);
+                        try_insert_aliases(map, l_i, &inner.data, list, alias, recs, i);
                         try_insert_rec_set(&inner.data.kind, value_sets, inner.data.recs, l_i);
                         walk_inner(inner, list, map, value_sets);
                     }
@@ -597,10 +594,6 @@ impl PartialEq for SliceData {
 impl Eq for SliceData {}
 
 impl SliceData {
-    fn exact_eq(&self, other: &Self) -> bool {
-        self == other && self.hash_i == other.hash_i
-    }
-
     /* -------------------------------- Debug tool --------------------------------------- */
     // fn display(&self, line_trim_start: &str) -> String {
     //     format!(
@@ -610,6 +603,56 @@ impl SliceData {
     //     )
     // }
     /* ----------------------------------------------------------------------------------- */
+
+    /// Returns the char index of first char immediately following `self`
+    #[inline]
+    fn byte_end_i(&self) -> usize {
+        self.byte_start + self.slice_len
+    }
+
+    #[inline]
+    fn exact_eq(&self, other: &Self) -> bool {
+        self == other && self.hash_i == other.hash_i
+    }
+
+    /// Caller must ensure that the input line is: `LineData.input.trim_start()` otherwise this
+    /// method will panic as it performs a manual slice into the input `line`
+    #[inline]
+    fn to_slice_unchecked(self, line: &str) -> &str {
+        &line[self.byte_start..self.byte_end_i()]
+    }
+
+    /// Caller is responsible for making the given `byte_start`, `slice_len` are valid indices into the given `line`
+    fn from_raw_unchecked(
+        byte_start: usize,
+        slice_len: usize,
+        expected: &RecKind,
+        line: &str,
+        completion: &Completion,
+        arg_count: Option<usize>,
+    ) -> Self {
+        let mut data = SliceData {
+            byte_start,
+            slice_len,
+            hash_i: INVALID,
+        };
+        match expected {
+            RecKind::Command => completion.hash_command_unchecked(line, &mut data),
+            RecKind::Argument(_) => completion.hash_arg_unchecked(line, &mut data),
+            RecKind::Value(range) => {
+                completion.hash_value_unchecked(line, &mut data, range, arg_count.unwrap_or(1))
+            }
+            RecKind::UserDefined { range, parse_fn } => {
+                if range.contains(&arg_count.unwrap_or(1))
+                    && parse_fn.map_or(true, |valid| valid(data.to_slice_unchecked(line)))
+                {
+                    data.hash_i = VALID
+                }
+            }
+            _ => (),
+        }
+        data
+    }
 }
 
 #[derive(Default, Debug)]
@@ -628,20 +671,20 @@ impl CompletionState {
                 state_modified = true;
             }
         }
-        if let Some(ref command) = self.curr_command {
-            if line.len() == command.byte_start + command.slice_len {
+        if let Some(command) = &self.curr_command {
+            if line.len() == command.byte_end_i() {
                 (self.curr_command, self.curr_argument, self.curr_value) = (None, None, None);
                 return true;
             }
         }
-        if let Some(ref arg) = self.curr_argument {
-            if line.len() == arg.byte_start + arg.slice_len {
+        if let Some(arg) = &self.curr_argument {
+            if line.len() == arg.byte_end_i() {
                 (self.curr_argument, self.curr_value) = (None, None);
                 return true;
             }
         }
-        if let Some(ref value) = self.curr_value {
-            if line.len() == value.byte_start + value.slice_len {
+        if let Some(value) = &self.curr_value {
+            if line.len() == value.byte_end_i() {
                 self.curr_value = None;
                 return true;
             }
@@ -729,54 +772,20 @@ impl CompletionState {
 }
 
 trait Validity {
-    /// returns `true` if `Some(hash_i == INVALID)` else `false`
-    fn is_some_and_invalid(&self) -> bool;
+    fn is_some_and_hash<const HASH: usize>(&self) -> bool;
 }
 
 impl Validity for Option<&SliceData> {
     #[inline]
-    fn is_some_and_invalid(&self) -> bool {
-        matches!(self, Some(SliceData { hash_i, ..}) if *hash_i == INVALID)
+    fn is_some_and_hash<const HASH: usize>(&self) -> bool {
+        Option::is_some_and(*self, |slice| slice.hash_i == HASH)
     }
 }
 
-impl SliceData {
-    /// Caller is responsible for making the given `byte_start`, `slice_len` are valid indices into the given `line`
-    fn from_raw_unchecked(
-        byte_start: usize,
-        slice_len: usize,
-        expected: &RecKind,
-        line: &str,
-        completion: &Completion,
-        arg_count: Option<usize>,
-    ) -> Self {
-        let mut data = SliceData {
-            byte_start,
-            slice_len,
-            hash_i: INVALID,
-        };
-        match expected {
-            RecKind::Command => completion.hash_command_unchecked(line, &mut data),
-            RecKind::Argument(_) => completion.hash_arg_unchecked(line, &mut data),
-            RecKind::Value(range) => {
-                completion.hash_value_unchecked(line, &mut data, range, arg_count.unwrap_or(1))
-            }
-            RecKind::UserDefined { range, parse_fn } => {
-                if range.contains(&arg_count.unwrap_or(1))
-                    && parse_fn.map_or(true, |valid| valid(data.to_slice_unchecked(line)))
-                {
-                    data.hash_i = VALID
-                }
-            }
-            _ => (),
-        }
-        data
-    }
-
-    /// Caller must ensure that the input line is: `LineData.input.trim_start()` otherwise this
-    /// method will panic as it performs a manual slice into the input `line`
-    fn to_slice_unchecked(self, line: &str) -> &str {
-        &line[self.byte_start..self.byte_start + self.slice_len]
+impl Validity for Option<SliceData> {
+    #[inline]
+    fn is_some_and_hash<const HASH: usize>(&self) -> bool {
+        Validity::is_some_and_hash::<HASH>(&self.as_ref())
     }
 }
 
@@ -807,7 +816,7 @@ impl Completion {
     #[inline]
     fn trailing<'a>(&self, line_trim_start: &'a str) -> &'a str {
         self.last_key().map_or(line_trim_start, |key| {
-            let trim = line_trim_start[key.byte_start + key.slice_len..].trim();
+            let trim = line_trim_start[key.byte_end_i()..].trim();
             trim.strip_prefix(HELP_ARG)
                 .or(trim.strip_prefix(HELP_ARG_SHORT))
                 .unwrap_or(trim)
@@ -851,28 +860,33 @@ impl Completion {
         expected: &RecKind,
         arg_count: Option<usize>,
     ) -> Option<SliceData> {
-        if self.input.ending.open_quote.is_none() {
-            let line_trim_end = line.trim_end();
-            let start = if line_trim_end.ends_with(['\'', '\"']) {
-                let quote = line_trim_end.chars().next_back().expect("outer if");
-                line_trim_end[..line_trim_end.len() - quote.len_utf8()].rfind(quote)
-            } else {
-                Some(
-                    line_trim_end
-                        .char_indices()
-                        .rev()
-                        .find_map(|(i, ch)| ch.is_whitespace().then(|| i + ch.len_utf8()))
-                        .unwrap_or_default(),
-                )
-            };
-            if let Some(byte_start) = start {
-                let len = line_trim_end.len() - byte_start;
-                return (len > 0).then(|| {
-                    SliceData::from_raw_unchecked(byte_start, len, expected, line, self, arg_count)
-                });
-            }
+        if self.input.ending.open_quote.is_some() {
+            return None;
         }
-        None
+
+        let line_trim_end = line.trim_end();
+        let byte_start = if line_trim_end.ends_with(['\'', '\"']) {
+            let quote = line_trim_end.chars().next_back().expect("outer if");
+            line_trim_end[..line_trim_end.len() - quote.len_utf8()].rfind(quote)
+        } else {
+            Some(
+                line_trim_end
+                    .char_indices()
+                    .rev()
+                    .find_map(|(i, ch)| ch.is_whitespace().then_some(i + ch.len_utf8()))
+                    .unwrap_or(0),
+            )
+        }?;
+
+        let len = line_trim_end.len() - byte_start;
+
+        if len == 0 {
+            return None;
+        }
+
+        Some(SliceData::from_raw_unchecked(
+            byte_start, len, expected, line, self, arg_count,
+        ))
     }
 
     /// only counts values until `count_till` is found, if `count_till` is not found it will return the last registered token in the
@@ -1021,7 +1035,7 @@ impl Completion {
 
 fn strip_dashes(str: &str) -> (usize, Option<&str>) {
     let dashes = str.chars().take_while(|&c| c == '-').count();
-    (dashes, str.get(dashes..).filter(|r| !r.is_empty()))
+    (dashes, str.get(dashes..).filter(|&r| !r.is_empty()))
 }
 
 impl<Ctx, W: Write> Repl<Ctx, W> {
@@ -1029,6 +1043,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     fn curr_token(&self) -> &str {
         &self.completion.input.ending.token
     }
+
     #[inline]
     fn open_quote(&self) -> Option<&(usize, char)> {
         self.completion.input.ending.open_quote.as_ref()
@@ -1132,17 +1147,13 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             })
             || recs[1].0.has_help
                 && (self.completion.indexer.multiple
-                    || self
-                        .completion
-                        .input
-                        .curr_value
-                        .is_some_and(|v| v.hash_i == VALID))
+                    || self.completion.input.curr_value.is_some_and_hash::<VALID>())
     }
 
     fn check_for_errors(&self, line_trim_start: &str) -> bool {
-        self.completion.curr_command().is_some_and_invalid()
-            || self.completion.curr_arg().is_some_and_invalid()
-            || self.completion.curr_value().is_some_and_invalid()
+        self.completion.curr_command().is_some_and_hash::<INVALID>()
+            || self.completion.curr_arg().is_some_and_hash::<INVALID>()
+            || self.completion.curr_value().is_some_and_hash::<INVALID>()
             || self.check_value_err(line_trim_start)
     }
 
@@ -1155,7 +1166,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             .completion
             .count_vals_in_slice(line_trim_start, command_kind);
 
-        if let Some(ref starting_token) = kind_match {
+        if let Some(starting_token) = &kind_match {
             let start_token_meta = self.completion.rec_list[starting_token.hash_i];
 
             if starting_token.hash_i == INVALID || nvals == 0 {
@@ -1186,7 +1197,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
 
         let line_trim_start = self.line.input.trim_start();
         if line_trim_start.is_empty() {
-            // `comp_enabled` can only be set when `!Completion.is_empty()` via checks in`enable_completion`
+            // `comp_enabled` can only be set when `!Completion.is_empty()` via checks in `enable_completion`
             // and `ReplBuilder::build`. Making it safe to call `default_recommendations` here
             self.completion.set_default_recommendations_unchecked();
             self.line.err = false;
@@ -1283,15 +1294,15 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 &RecKind::Argument(required) => {
                     // track the position of user defined user required inputs for the current command
                     match new {
-                        Some(SliceData {
-                            hash_i: INVALID,
-                            byte_start,
-                            slice_len,
-                        }) if self.completion.input.required_input_i.len() < required => self
+                        Some(
+                            invalid @ SliceData {
+                                hash_i: INVALID, ..
+                            },
+                        ) if self.completion.input.required_input_i.len() < required => self
                             .completion
                             .input
                             .required_input_i
-                            .push(byte_start + slice_len),
+                            .push(invalid.byte_end_i()),
                         _ => self.completion.input.curr_argument = new,
                     }
                 }
@@ -1324,7 +1335,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                         return None;
                     };
                     let cmd_kind = &self.completion.rec_list[cmd.hash_i].kind;
-                    let arg_suf = line_trim_start[arg.byte_start + arg.slice_len..].trim_start();
+                    let arg_suf = line_trim_start[arg.byte_end_i()..].trim_start();
                     (arg.hash_i != INVALID && !arg_suf.is_empty())
                         .then_some((cmd_kind, arg, range, arg_suf))
                 })
@@ -1478,7 +1489,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     pub fn try_completion(&mut self, direction: Direction) -> io::Result<()> {
         if !self.line.comp_enabled
             || self.completion.recommendations.is_empty()
-            || self.completion.last_key().is_some_and_invalid()
+            || self.completion.last_key().is_some_and_hash::<INVALID>()
             || (self.completion.recommendations.len() == 1
                 && match self.completion.rec_data_from_index(0).kind {
                     RecKind::Value(_) => {
