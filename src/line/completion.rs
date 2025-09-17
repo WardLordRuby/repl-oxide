@@ -17,10 +17,11 @@ const HELP_ARG: &str = "--help";
 const HELP_ARG_SHORT: &str = "-h";
 
 const USER_INPUT: i8 = -1;
-const COMMANDS: usize = 0;
-const INVALID: usize = 1;
-const VALID: usize = 2;
-const HELP: usize = 3;
+const HELP: RecData = RecData::help();
+
+/// Static `RecData` node to signify that `HashIndex::Valid` and `HashIndex::Invalid` both do not have
+/// valid recommendations that follow.
+const EMPTY: RecData = RecData::empty();
 
 // MARK: IMPROVE
 // we could solve name-space collisions by making the data structure into a prefix-tree
@@ -35,24 +36,14 @@ pub struct CommandScheme {
     /// command names followed by aliases
     commands: RecData,
 
-    /// static empty node used for invalid inputs
-    invalid: RecData,
-
-    /// static empty node used for valid inputs of `RecKind::Value`
-    valid: RecData,
-
-    /// static help node used for adding help args/commands
-    help: RecData,
-
     /// inner data shares indices with `commands.recs`
     inner: &'static [InnerScheme],
 }
 
 // MARK: TODO
-// 1. Prototype user experience with builder? (`str::trim_ascii`(1.80) && `str::make_ascii_lowercase`(1.84) are const methods)
-// 2. Add support for recursive commands
-//    currently we only support commands that only take one command as a clap value enum
-//    we should be able to have interior commands still have args/flags ect..
+// Add support for recursive commands
+// currently we only support commands that only take one command as a clap value enum
+// we should be able to have interior commands still have args/flags ect..
 
 /// Tree node of [`CommandScheme`]
 ///
@@ -107,13 +98,7 @@ pub enum Parent {
 
 impl CommandScheme {
     pub const fn new(commands: RecData, inner: &'static [InnerScheme]) -> Self {
-        Self {
-            commands,
-            invalid: RecData::empty(),
-            valid: RecData::empty(),
-            help: RecData::help(),
-            inner,
-        }
+        Self { commands, inner }
     }
 }
 
@@ -351,15 +336,16 @@ impl Direction {
 impl From<&'static CommandScheme> for Completion {
     fn from(value: &'static CommandScheme) -> Self {
         fn insert_index(
-            map: &mut HashMap<&'static str, usize>,
+            map: &mut HashMap<&'static str, HashIndex>,
             key: &'static str,
             val: usize,
             data: &'static RecData,
             list: &[&'static RecData],
         ) {
-            if let Some(j) = map.insert(key, val) {
+            if let Some(j) = map.insert(key, HashIndex::Entry(val)) {
                 assert_eq!(
-                    list[j], data,
+                    Completion::index_recs(list, j),
+                    data,
                     "duplicate recommendation entries _must_ have identical nodes"
                 )
             }
@@ -385,7 +371,7 @@ impl From<&'static CommandScheme> for Completion {
             }
         }
         fn try_insert_aliases(
-            map: &mut HashMap<&'static str, usize>,
+            map: &mut HashMap<&'static str, HashIndex>,
             val: usize,
             data: &'static RecData,
             list: &[&'static RecData],
@@ -410,7 +396,7 @@ impl From<&'static CommandScheme> for Completion {
         fn walk_inner(
             inner: &'static InnerScheme,
             list: &mut Vec<&'static RecData>,
-            map: &mut HashMap<&'static str, usize>,
+            map: &mut HashMap<&'static str, HashIndex>,
             value_sets: &mut HashMap<usize, HashSet<&'static str>>,
         ) {
             match inner.data {
@@ -471,8 +457,8 @@ impl From<&'static CommandScheme> for Completion {
         assert!(value.commands.short.is_none());
         let mut rec_map = HashMap::new();
         let mut value_sets = HashMap::new();
-        let mut rec_list = vec![&value.commands, &value.invalid, &value.valid, &value.help];
-        rec_map.insert(HELP_STR, HELP);
+        let mut rec_list = vec![&value.commands];
+        rec_map.insert(HELP_STR, HashIndex::Help);
         for (i, (&command, inner)) in value
             .commands
             .recs
@@ -526,7 +512,7 @@ pub struct Completion {
     input: CompletionState,
     indexer: Indexer,
     rec_list: Box<[&'static RecData]>,
-    rec_map: HashMap<&'static str, usize>,
+    rec_map: HashMap<&'static str, HashIndex>,
     value_sets: HashMap<usize, HashSet<&'static str>>,
 }
 
@@ -536,7 +522,7 @@ struct Indexer {
     /// `list.1` is only used when `Self.multiple`
     ///
     /// [`Completion.rec_list`]: Completion
-    list: (usize, usize),
+    list: (HashIndex, HashIndex),
 
     /// Flag meaning more than one category of recommendations are valid at the same time, and the index
     /// `Self.list.1` should be used to give accurate recommendations
@@ -560,7 +546,7 @@ struct Indexer {
 impl Default for Indexer {
     fn default() -> Self {
         Indexer {
-            list: (COMMANDS, INVALID),
+            list: (HashIndex::Commands, HashIndex::Invalid),
             multiple: false,
             in_list_2: Vec::new(),
             recs: USER_INPUT,
@@ -577,12 +563,21 @@ struct CompletionState {
     ending: LineEnd,
 }
 
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Debug)]
 /// Represents a `&str` into `LineData.input.trim_start()`
 struct SliceData {
     byte_start: usize,
     slice_len: usize,
-    hash_i: usize,
+    hash_i: HashIndex,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HashIndex {
+    Commands,
+    Entry(usize),
+    Help,
+    Invalid,
+    Valid,
 }
 
 impl PartialEq for SliceData {
@@ -634,7 +629,7 @@ impl SliceData {
         let mut data = SliceData {
             byte_start,
             slice_len,
-            hash_i: INVALID,
+            hash_i: HashIndex::Invalid,
         };
         match expected {
             RecKind::Command => completion.hash_command_unchecked(line, &mut data),
@@ -646,7 +641,7 @@ impl SliceData {
                 if range.contains(&arg_count.unwrap_or(1))
                     && parse_fn.map_or(true, |valid| valid(data.to_slice_unchecked(line)))
                 {
-                    data.hash_i = VALID
+                    data.hash_i = HashIndex::Valid
                 }
             }
             _ => (),
@@ -772,20 +767,20 @@ impl CompletionState {
 }
 
 trait Validity {
-    fn is_some_and_hash<const HASH: usize>(&self) -> bool;
+    fn is_some_and_invalid(&self) -> bool;
 }
 
 impl Validity for Option<&SliceData> {
     #[inline]
-    fn is_some_and_hash<const HASH: usize>(&self) -> bool {
-        Option::is_some_and(*self, |slice| slice.hash_i == HASH)
+    fn is_some_and_invalid(&self) -> bool {
+        self.is_some_and(|slice| slice.hash_i == HashIndex::Invalid)
     }
 }
 
 impl Validity for Option<SliceData> {
     #[inline]
-    fn is_some_and_hash<const HASH: usize>(&self) -> bool {
-        Validity::is_some_and_hash::<HASH>(&self.as_ref())
+    fn is_some_and_invalid(&self) -> bool {
+        self.as_ref().is_some_and_invalid()
     }
 }
 
@@ -795,17 +790,41 @@ impl Completion {
         self.rec_list.is_empty()
     }
 
+    #[inline]
+    fn get_commands(list: &[&'static RecData]) -> &'static RecData {
+        list[0]
+    }
+
+    fn index_recs(list: &[&'static RecData], idx: HashIndex) -> &'static RecData {
+        match idx {
+            HashIndex::Invalid | HashIndex::Valid => &EMPTY,
+            HashIndex::Help => &HELP,
+            HashIndex::Commands => Self::get_commands(list),
+            HashIndex::Entry(i) => list[i],
+        }
+    }
+
+    #[inline]
+    fn get_primary_recommendation(&self) -> &'static RecData {
+        Self::index_recs(&self.rec_list, self.indexer.list.0)
+    }
+
+    #[inline]
+    fn get_secondary_recommendation(&self) -> &'static RecData {
+        Self::index_recs(&self.rec_list, self.indexer.list.1)
+    }
+
     /// Acquires the [`RecData`] of any [`recommendation`] via its index
     ///
     /// Note: this method is pointless to call if the given index is [`USER_INPUT`], as user input
     /// is not a recommendation, hence always returning a reference to an _invalid_ `RecData`
     ///
     /// [`recommendation`]: Completion
-    pub(super) fn rec_data_from_index(&self, recommendation_i: i8) -> &RecData {
+    pub(super) fn rec_data_from_index(&self, recommendation_i: i8) -> &'static RecData {
         if self.indexer.multiple && self.indexer.in_list_2.contains(&recommendation_i) {
-            return self.rec_list[self.indexer.list.1];
+            return self.get_secondary_recommendation();
         }
-        self.rec_list[self.indexer.list.0]
+        self.get_primary_recommendation()
     }
     #[inline]
     fn last_key(&self) -> Option<&SliceData> {
@@ -839,9 +858,21 @@ impl Completion {
         self.input.curr_value.as_ref()
     }
 
-    /// expects `RecKind::Value`
+    /// expects a `HashIndex` associated with `RecKind::Value`
     #[inline]
-    fn value_valid(&self, value: &str, i: usize) -> bool {
+    fn value_valid_unchecked(&self, value: &str, idx: HashIndex) -> bool {
+        let HashIndex::Entry(i) = idx else {
+            panic!("Expected `HashIndex::Entry` got: {idx:?}")
+        };
+
+        #[cfg(debug_assertions)]
+        {
+            let rec_data = self.rec_list[i];
+            let RecKind::Value(_) = rec_data.kind else {
+                panic!("Expected `RecData` with `RecKind::Value` got: {rec_data:?}")
+            };
+        }
+
         self.value_sets.get(&i).expect("kind value").contains(value)
     }
 
@@ -905,7 +936,7 @@ impl Completion {
         let last_valid_token = self.last_key();
 
         while let Some(token) = self.try_parse_token_from_end(&slice[..end_i], count_till, None) {
-            if token.hash_i != INVALID {
+            if token.hash_i != HashIndex::Invalid {
                 return (Some(token), nvals);
             } else if last_valid_token.is_some_and(|&known_valid| token == known_valid) {
                 // here we copy the last valid_token in the case that `last_valid_token`'s `RecKind` != the `count_till` `RecKind`
@@ -943,7 +974,9 @@ impl Completion {
             .unwrap_or(command_str);
 
         if let Some(&i) = self.rec_map.get(hash_str) {
-            if let Some(Parent::Root | Parent::Universal) = self.rec_list[i].parent {
+            if let Some(Parent::Root | Parent::Universal) =
+                Completion::index_recs(&self.rec_list, i).parent
+            {
                 command.hash_i = i;
             }
         }
@@ -963,13 +996,13 @@ impl Completion {
         }
     }
 
-    fn trimmed_arg_valid_i_unchecked(&self, arg: &str, line_trim_start: &str) -> Option<usize> {
+    fn trimmed_arg_valid_i_unchecked(&self, arg: &str, line_trim_start: &str) -> Option<HashIndex> {
         let cmd = self
             .curr_command()
             .expect("can only set arg if command is valid")
             .to_slice_unchecked(line_trim_start);
         let i = self.rec_map.get(arg).copied()?;
-        if match self.rec_list[i].parent {
+        if match Completion::index_recs(&self.rec_list, i).parent {
             // `hash_command_unchecked` _only_ provides case leeway for 'Pascal Case' commands
             // making it fine to ignore all case here
             Some(Parent::Entry(p)) => p.eq_ignore_ascii_case(cmd),
@@ -1003,8 +1036,11 @@ impl Completion {
             .arg_or_cmd()
             .expect("can only set value if cmd or arg is some");
 
-        if self.value_valid(val_str, parent.hash_i) {
-            value.hash_i = VALID;
+        // This is safe to call into since:
+        //   There are no `RecKind::Value` statically set as `expected`
+        //   The faith that there are no bugs in this file
+        if self.value_valid_unchecked(val_str, parent.hash_i) {
+            value.hash_i = HashIndex::Valid;
         }
     }
 
@@ -1025,7 +1061,7 @@ impl Completion {
 
     /// Will panic if `self.completion.is_empty()`
     fn set_default_recommendations_unchecked(&mut self) {
-        let commands = self.rec_list[COMMANDS];
+        let commands = Self::get_commands(&self.rec_list);
         self.recommendations = commands.recs.as_ref().expect("commands is not empty")
             [..commands.unique_rec_end()]
             .to_vec();
@@ -1049,12 +1085,12 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         self.completion.input.ending.open_quote.as_ref()
     }
 
-    fn kind_err_conditions(&self, hash: usize, curr_token: &str, trailing: &str) -> bool {
-        let rec = self.completion.rec_list[hash];
-        let has_help = if hash == VALID {
+    fn kind_err_conditions(&self, idx: HashIndex, curr_token: &str, trailing: &str) -> bool {
+        let rec = Completion::index_recs(&self.completion.rec_list, idx);
+        let has_help = if idx == HashIndex::Valid {
             self.completion
                 .curr_command()
-                .map(|cmd| self.completion.rec_list[cmd.hash_i].has_help)
+                .map(|cmd| Completion::index_recs(&self.completion.rec_list, cmd.hash_i).has_help)
                 .expect("valid can only be set once a base entry is provided")
         } else {
             rec.has_help
@@ -1077,7 +1113,8 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                                     .curr_command()
                                     .expect("can only set arg if command is valid")
                                     .hash_i;
-                                !self.completion.rec_list[parent_hash].has_help
+                                !Completion::index_recs(&self.completion.rec_list, parent_hash)
+                                    .has_help
                             }
                             (1, Some(input)) if input.chars().nth(1).is_none() => self
                                 .completion
@@ -1124,7 +1161,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         }
         if curr_token.starts_with('-')
             && matches!(
-                self.completion.rec_list[rec_list[1]].kind,
+                Completion::index_recs(&self.completion.rec_list, rec_list[1]).kind,
                 RecKind::Argument(_)
             )
         {
@@ -1134,7 +1171,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     }
 
     #[inline]
-    fn add_help(&self, recs: [(&RecData, usize); 2], line_trim_start: &str) -> bool {
+    fn add_help(&self, recs: [(&RecData, HashIndex); 2], line_trim_start: &str) -> bool {
         let last_rec = recs[0].0;
 
         last_rec.has_help
@@ -1147,13 +1184,17 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             })
             || recs[1].0.has_help
                 && (self.completion.indexer.multiple
-                    || self.completion.input.curr_value.is_some_and_hash::<VALID>())
+                    || self
+                        .completion
+                        .input
+                        .curr_value
+                        .is_some_and(|v| v.hash_i == HashIndex::Valid))
     }
 
     fn check_for_errors(&self, line_trim_start: &str) -> bool {
-        self.completion.curr_command().is_some_and_hash::<INVALID>()
-            || self.completion.curr_arg().is_some_and_hash::<INVALID>()
-            || self.completion.curr_value().is_some_and_hash::<INVALID>()
+        self.completion.curr_command().is_some_and_invalid()
+            || self.completion.curr_arg().is_some_and_invalid()
+            || self.completion.curr_value().is_some_and_invalid()
             || self.check_value_err(line_trim_start)
     }
 
@@ -1167,9 +1208,10 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             .count_vals_in_slice(line_trim_start, command_kind);
 
         if let Some(starting_token) = &kind_match {
-            let start_token_meta = self.completion.rec_list[starting_token.hash_i];
+            let start_token_meta =
+                Completion::index_recs(&self.completion.rec_list, starting_token.hash_i);
 
-            if starting_token.hash_i == INVALID || nvals == 0 {
+            if starting_token.hash_i == HashIndex::Invalid || nvals == 0 {
                 return kind_match;
             }
 
@@ -1208,7 +1250,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         self.completion.input.update_curr_token(line_trim_start);
         let state_changed = self.completion.input.check_state(line_trim_start);
 
-        if !state_changed && self.completion.indexer.list.0 == INVALID {
+        if !state_changed && self.completion.indexer.list.0 == HashIndex::Invalid {
             self.line.err = self.check_for_errors(line_trim_start);
             return;
         }
@@ -1249,7 +1291,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 return None;
             }
 
-            let command_kind = &self.completion.rec_list[cmd.hash_i].kind;
+            let command_kind = &Completion::index_recs(&self.completion.rec_list, cmd.hash_i).kind;
             let cmd_suf = line_trim_start[cmd.slice_len..].trim_start();
             (matches!(command_kind, RecKind::Argument(_) | RecKind::Value(_))
                 && !cmd_suf.is_empty())
@@ -1265,16 +1307,21 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                 );
 
                 kind_match.filter(|starting_token| {
-                    !starting_token.exact_eq(self.completion.curr_command().expect("outer if"))
-                        && match &self.completion.rec_list[starting_token.hash_i].kind {
-                            RecKind::Value(range) | RecKind::UserDefined { range, .. }
-                                if range.contains(&(nvals + 1)) =>
-                            {
-                                self.completion.indexer.multiple = nvals >= range.start;
-                                true
-                            }
-                            _ => self.completion.rec_list[starting_token.hash_i].end,
+                    if starting_token.exact_eq(self.completion.curr_command().expect("outer if")) {
+                        return false;
+                    }
+
+                    let starting_token =
+                        Completion::index_recs(&self.completion.rec_list, starting_token.hash_i);
+                    match &starting_token.kind {
+                        RecKind::Value(range) | RecKind::UserDefined { range, .. }
+                            if range.contains(&(nvals + 1)) =>
+                        {
+                            self.completion.indexer.multiple = nvals >= range.start;
+                            true
                         }
+                        _ => starting_token.end,
+                    }
                 })
             };
             let kind = new
@@ -1284,7 +1331,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                     // `count_vals_in_slice` both use `line_trim_start` and the beginning of `line_trim_start` was not sliced
                     let token_slice = token.to_slice_unchecked(line_trim_start);
                     (token_slice == HELP_ARG || token_slice == HELP_ARG_SHORT).then(|| {
-                        token.hash_i = HELP;
+                        token.hash_i = HashIndex::Help;
                         &RecKind::Argument(0)
                     })
                 })
@@ -1296,7 +1343,8 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
                     match new {
                         Some(
                             invalid @ SliceData {
-                                hash_i: INVALID, ..
+                                hash_i: HashIndex::Invalid,
+                                ..
                             },
                         ) if self.completion.input.required_input_i.len() < required => self
                             .completion
@@ -1312,7 +1360,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         }
 
         if let Some(end) = self.completion.curr_arg().and_then(|arg| {
-            let rec_data = self.completion.rec_list[arg.hash_i];
+            let rec_data = Completion::index_recs(&self.completion.rec_list, arg.hash_i);
             (rec_data.kind == RecKind::ArgFlag).then_some(rec_data.end)
         }) {
             // boolean flag found, ok to move on
@@ -1321,7 +1369,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             }
         } else if let Some((cmd_kind, arg_slice, range, arg_suf)) =
             self.completion.curr_command().and_then(|cmd| {
-                if cmd.hash_i == INVALID
+                if cmd.hash_i == HashIndex::Invalid
                     || self.completion.curr_value().is_some()
                     || self.open_quote().is_some()
                 {
@@ -1330,25 +1378,26 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
 
                 self.completion.curr_arg().and_then(|arg| {
                     let (RecKind::Value(range) | RecKind::UserDefined { range, .. }) =
-                        &self.completion.rec_list[arg.hash_i].kind
+                        &Completion::index_recs(&self.completion.rec_list, arg.hash_i).kind
                     else {
                         return None;
                     };
-                    let cmd_kind = &self.completion.rec_list[cmd.hash_i].kind;
+                    let cmd_kind =
+                        &Completion::index_recs(&self.completion.rec_list, cmd.hash_i).kind;
                     let arg_suf = line_trim_start[arg.byte_end_i()..].trim_start();
-                    (arg.hash_i != INVALID && !arg_suf.is_empty())
+                    (arg.hash_i != HashIndex::Invalid && !arg_suf.is_empty())
                         .then_some((cmd_kind, arg, range, arg_suf))
                 })
             })
         {
             if arg_suf.ends_with(char::is_whitespace) {
-                let arg_data = self.completion.rec_list[arg_slice.hash_i];
+                let arg_data = Completion::index_recs(&self.completion.rec_list, arg_slice.hash_i);
 
                 if let Some(token) =
                     self.completion
                         .try_parse_token_from_end(line_trim_start, &arg_data.kind, None)
                 {
-                    if token.hash_i != INVALID && !arg_data.end {
+                    if token.hash_i != HashIndex::Invalid && !arg_data.end {
                         let (kind_match, nvals) = self
                             .completion
                             .count_vals_in_slice(line_trim_start, cmd_kind);
@@ -1394,14 +1443,14 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             (Some(&SliceData { hash_i: i, .. }), Some(&SliceData { hash_i: j, .. }), None) => {
                 (j, i)
             }
-            (Some(&SliceData { hash_i: i, .. }), None, None) => (i, INVALID),
+            (Some(&SliceData { hash_i: i, .. }), None, None) => (i, HashIndex::Invalid),
             (None, None, None) if line_trim_start.split_whitespace().count() <= 1 => {
-                (COMMANDS, INVALID)
+                (HashIndex::Commands, HashIndex::Invalid)
             }
-            _ => (INVALID, INVALID),
+            _ => (HashIndex::Invalid, HashIndex::Invalid),
         };
 
-        if self.completion.indexer.list.1 == INVALID {
+        if self.completion.indexer.list.1 == HashIndex::Invalid {
             self.completion.indexer.multiple = false;
         }
 
@@ -1409,7 +1458,12 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             self.completion.indexer.list.0,
             self.completion.indexer.list.1,
         ]
-        .map(|hash| (self.completion.rec_list[hash], hash));
+        .map(|hash| {
+            (
+                Completion::index_recs(&self.completion.rec_list, hash),
+                hash,
+            )
+        });
         let (rec_data_1, rec_data_2) = (rec_data[0].0, rec_data[1].0);
 
         let add_help = self.add_help(rec_data, line_trim_start);
@@ -1489,7 +1543,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     pub fn try_completion(&mut self, direction: Direction) -> io::Result<()> {
         if !self.line.comp_enabled
             || self.completion.recommendations.is_empty()
-            || self.completion.last_key().is_some_and_hash::<INVALID>()
+            || self.completion.last_key().is_some_and_invalid()
             || (self.completion.recommendations.len() == 1
                 && match self.completion.rec_data_from_index(0).kind {
                     RecKind::Value(_) => {
@@ -1562,7 +1616,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
         };
 
         let kind = if recommendation == HELP_STR {
-            &self.completion.rec_list[HELP].kind
+            &RecKind::Help
         } else if self.completion.indexer.recs == USER_INPUT {
             // Set as `Command` because we do not need additional formatting below in the `USER_INPUT` case
             &RecKind::Command
