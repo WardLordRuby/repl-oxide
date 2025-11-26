@@ -89,7 +89,7 @@ impl Executor<Stdout> for CommandContext {
         match try_parse_from(&user_tokens) {
             Ok(command) => match command {
                 Command::Count { numbers } => self.count(repl_handle, numbers),
-                Command::Test => CommandContext::async_test(repl_handle).await,
+                Command::Test => Self::async_test(repl_handle).await,
                 Command::Quit => Ok(CommandHandle::Exit),
             },
             Err(err) => repl_handle.print_clap_err(err),

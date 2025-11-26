@@ -193,7 +193,7 @@ impl Executor<Stdout> for CommandContext {
     ) -> io::Result<CommandHandle<Self, Stdout>> {
         match try_parse_from(&user_tokens) {
             Ok(command) => match command {
-                Command::Echo { args } => CommandContext::echo(repl_handle, args),
+                Command::Echo { args } => Self::echo(repl_handle, args),
                 Command::Roll { sides } => self.roll(repl_handle, sides),
                 Command::Quit => Ok(CommandHandle::Exit),
             },
