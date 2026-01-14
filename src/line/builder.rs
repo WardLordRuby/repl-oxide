@@ -53,7 +53,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// Builder for [`Repl`]
     ///
     /// Must supply a writer that is compatible with executing commands via the `crossterm` crate.
-    #[allow(clippy::new_ret_no_self)]
+    #[expect(clippy::new_ret_no_self, reason = "force users into builder pattern")]
     pub fn new(terminal: W) -> ReplBuilder<'static, Ctx, W> {
         // await_debug_server(r"\\.\pipe\debug_log");
 
