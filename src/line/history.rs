@@ -17,9 +17,37 @@ struct Entry {
     tag: Option<u32>,
 }
 
+#[derive(Debug)]
+pub struct EntryRef<'a> {
+    value: &'a str,
+    tag: Option<u32>,
+}
+
+impl EntryRef<'_> {
+    pub fn entry(&self) -> &str {
+        self.value
+    }
+    pub fn tag(&self) -> Option<u32> {
+        self.tag
+    }
+}
+
+impl std::fmt::Display for EntryRef<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
+
 impl Entry {
     fn untagged(value: String) -> Self {
         Self { value, tag: None }
+    }
+
+    fn as_ref(&self) -> EntryRef<'_> {
+        EntryRef {
+            value: &self.value,
+            tag: self.tag,
+        }
     }
 
     #[inline]
@@ -27,7 +55,7 @@ impl Entry {
         &self.value
     }
     #[inline]
-    fn cloned(&self) -> String {
+    fn cloned_value(&self) -> String {
         self.value.clone()
     }
 }
@@ -164,7 +192,14 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
     /// Iterates over entries in the history from most recent to oldest. If you want an owned copy and to maintain
     /// the correct order of the history stack see: [`Self::export_history`].
     #[inline]
-    pub fn history_entries(&self) -> impl Iterator<Item = &str> {
+    pub fn history_entries(&self) -> impl Iterator<Item = EntryRef<'_>> {
+        self.history.prev_entries.values().rev().map(Entry::as_ref)
+    }
+
+    /// Iterates over string values in the history from most recent to oldest. If you want an owned copy and to
+    /// maintain the correct order of the history stack see: [`Self::export_history`].
+    #[inline]
+    pub fn history_strings(&self) -> impl Iterator<Item = &str> {
         self.history.prev_entries.values().rev().map(Entry::value)
     }
 
@@ -227,7 +262,7 @@ impl<Ctx, W: Write> Repl<Ctx, W> {
             .prev_entries
             .values()
             .skip(skip)
-            .map(Entry::cloned)
+            .map(Entry::cloned_value)
             .collect()
     }
 
