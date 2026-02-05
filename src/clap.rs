@@ -1,6 +1,7 @@
 use crate::{executor::CommandHandle, line::Repl};
 
 use std::{
+    ffi::OsString,
     io::{self, Write},
     iter,
 };
@@ -13,12 +14,13 @@ use clap::{Error, Parser};
 ///
 /// [`clap_derive::Parser`]: <https://docs.rs/clap/latest/clap/trait.Parser.html>
 #[inline]
-pub fn try_parse_from<T, S>(tokens: &[S]) -> Result<T, Error>
+pub fn try_parse_from<T, I, S>(tokens: I) -> Result<T, Error>
 where
     T: Parser,
-    S: AsRef<str>,
+    I: IntoIterator<Item = S>,
+    S: Into<OsString> + Clone,
 {
-    T::try_parse_from(iter::once("").chain(tokens.iter().map(AsRef::as_ref)))
+    T::try_parse_from(iter::once(OsString::new()).chain(tokens.into_iter().map(Into::into)))
 }
 
 impl<Ctx, W: Write> Repl<Ctx, W> {
