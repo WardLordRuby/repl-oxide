@@ -346,7 +346,7 @@ impl From<&'static CommandScheme> for Completion {
                 assert_eq!(
                     Completion::index_recs(list, j),
                     data,
-                    "duplicate recommendation entries _must_ have identical nodes"
+                    "duplicate recommendation entries _must_ have identical nodes. Shared key in question: '{key}'"
                 )
             }
         }
@@ -637,12 +637,11 @@ impl SliceData {
             RecKind::Value(range) => {
                 completion.hash_value_unchecked(line, &mut data, range, arg_count.unwrap_or(1))
             }
-            RecKind::UserDefined { range, parse_fn } => {
+            RecKind::UserDefined { range, parse_fn }
                 if range.contains(&arg_count.unwrap_or(1))
-                    && parse_fn.map_or(true, |valid| valid(data.to_slice_unchecked(line)))
-                {
-                    data.hash_i = HashIndex::Valid
-                }
+                    && parse_fn.map_or(true, |valid| valid(data.to_slice_unchecked(line))) =>
+            {
+                data.hash_i = HashIndex::Valid
             }
             _ => (),
         }
