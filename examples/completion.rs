@@ -11,7 +11,7 @@ use repl_oxide::{
 use std::io::{self, Stdout};
 
 use clap::{value_parser, Args, CommandFactory, Parser, ValueEnum};
-use rand::Rng;
+use rand::RngExt;
 
 #[derive(Parser)]
 #[command(
